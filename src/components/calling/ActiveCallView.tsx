@@ -108,11 +108,7 @@ export default function ActiveCallView() {
       setTranscriptLines([]);
       transcriptLinesRef.current = [];
 
-      // Determine inbound vs outbound from intent
-      const isOutbound = !activeCallTarget?.intent.toLowerCase().includes('missed') &&
-                         !activeCallTarget?.intent.toLowerCase().includes('dispute');
-      const personaKey = activeCallTarget?.id || 'lead_1';
-      const sm = new ConversationStateMachine(personaKey, isOutbound);
+      const sm = new ConversationStateMachine(activeCallTarget);
       stateMachineRef.current = sm;
 
       setConversationStage('greeting');
@@ -171,24 +167,28 @@ export default function ActiveCallView() {
       });
 
       // Initialize dialogue through Conversation State Machine
-      const sm = stateMachineRef.current || new ConversationStateMachine(activeCallTarget?.id, true);
+      const sm = stateMachineRef.current || new ConversationStateMachine(activeCallTarget);
       stateMachineRef.current = sm;
 
       const opening = sm.getOpeningLine();
-      const openTime = '0:01';
-      const initialLine: TranscriptLine = {
-        id: `line-${Date.now()}`,
-        speaker: opening.speaker,
-        name: opening.speaker === 'customer' ? activeCallTarget?.name || 'Customer' : 'Arvind Rajan (You)',
-        text: opening.text,
-        time: openTime,
-      };
+      if (opening.hasSpeech && opening.text) {
+        const initialLine: TranscriptLine = {
+          id: `line-${Date.now()}`,
+          speaker: 'customer',
+          name: activeCallTarget?.name || 'Customer',
+          text: opening.text,
+          time: '0:01',
+        };
+        setTranscriptLines([initialLine]);
+        transcriptLinesRef.current = [initialLine];
 
-      setTranscriptLines([initialLine]);
-      transcriptLinesRef.current = [initialLine];
-
-      if (opening.speaker === 'customer' && isSpeakerOnRef.current && !isOnHoldRef.current) {
-        speechService.speak(opening.text);
+        if (isSpeakerOnRef.current && !isOnHoldRef.current) {
+          speechService.speak(opening.text);
+        }
+      } else {
+        // Outbound call: No fake customer speech. Clean start awaiting agent greeting.
+        setTranscriptLines([]);
+        transcriptLinesRef.current = [];
       }
 
       // Listen for agent microphone speech
@@ -231,7 +231,7 @@ export default function ActiveCallView() {
     if (!sm) return;
 
     // Process speech through Conversation State Machine
-    const { customerReply, sopFlag } = sm.processAgentSpeech(text, timeStr);
+    const { customerReply, sopFlag, callCompleted } = sm.processAgentSpeech(text, timeStr);
 
     // Update state machine observations
     setConversationStage(sm.getCurrentStage());
@@ -243,30 +243,43 @@ export default function ActiveCallView() {
       showToast(`SOP Achieved: ${sopFlag}`);
     }
 
-    // Customer responds after realistic conversational pause (800ms)
-    if (customerTimeoutRef.current) clearTimeout(customerTimeoutRef.current);
-    customerTimeoutRef.current = setTimeout(() => {
-      if (isOnHoldRef.current) return;
+    // Customer responds after realistic conversational pause (750ms)
+    if (customerReply) {
+      if (customerTimeoutRef.current) clearTimeout(customerTimeoutRef.current);
+      customerTimeoutRef.current = setTimeout(() => {
+        if (isOnHoldRef.current) return;
 
-      const replySecs = secondsRef.current;
-      const replyLine: TranscriptLine = {
-        id: `line-${Date.now() + 1}`,
-        speaker: 'customer',
-        name: activeCallTarget?.name || 'Customer',
-        text: customerReply,
-        time: `${Math.floor(replySecs / 60)}:${(replySecs % 60).toString().padStart(2, '0')}`,
-      };
+        const replySecs = secondsRef.current;
+        const replyLine: TranscriptLine = {
+          id: `line-${Date.now() + 1}`,
+          speaker: 'customer',
+          name: activeCallTarget?.name || 'Customer',
+          text: customerReply,
+          time: `${Math.floor(replySecs / 60)}:${(replySecs % 60).toString().padStart(2, '0')}`,
+        };
 
-      setTranscriptLines((prev) => {
-        const next = [...prev, replyLine];
-        transcriptLinesRef.current = next;
-        return next;
-      });
+        setTranscriptLines((prev) => {
+          const next = [...prev, replyLine];
+          transcriptLinesRef.current = next;
+          return next;
+        });
 
-      if (isSpeakerOnRef.current && !isOnHoldRef.current) {
-        speechService.speak(customerReply);
-      }
-    }, 850);
+        if (isSpeakerOnRef.current && !isOnHoldRef.current) {
+          speechService.speak(customerReply, () => {
+            if (callCompleted) {
+              // Gracefully end call and open wrap-up upon completion of final courtesy signoff
+              setTimeout(() => {
+                handleHangup();
+              }, 1200);
+            }
+          });
+        } else if (callCompleted) {
+          setTimeout(() => {
+            handleHangup();
+          }, 1200);
+        }
+      }, 750);
+    }
   };
 
   // Toggle Hardware Microphone Mute

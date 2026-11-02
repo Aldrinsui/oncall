@@ -31,6 +31,9 @@ export class SpeechService {
   }
 
   private isSpeakingAloud = false;
+  private lastSpeakingEndTime = 0;
+  private lastProcessedText = '';
+  private lastProcessedTime = 0;
 
   getIsSpeakingAloud(): boolean {
     return this.isSpeakingAloud;
@@ -63,10 +66,11 @@ export class SpeechService {
     }
 
     const handleEnd = () => {
-      // 300ms room acoustic decay delay before re-enabling agent mic transcription
+      this.lastSpeakingEndTime = Date.now();
+      // 400ms room acoustic decay delay before re-enabling agent mic transcription
       setTimeout(() => {
         this.isSpeakingAloud = false;
-      }, 300);
+      }, 400);
       if (onEnd) onEnd();
     };
 
@@ -80,6 +84,7 @@ export class SpeechService {
     if (this.synth) {
       this.synth.cancel();
     }
+    this.lastSpeakingEndTime = Date.now();
     this.isSpeakingAloud = false;
   }
 
@@ -135,24 +140,63 @@ export class SpeechService {
     this.analyser = null;
   }
 
-  // 3. Start live speech recognition for agent voice
+  // Validate agent speech recognition results to filter noise and isolated numbers
+  private isValidUtterance(rawText: string): boolean {
+    const text = rawText.trim();
+    if (text.length < 2) return false;
+
+    // Filter out isolated raw numeric noise (e.g. "5674748833") with no surrounding words
+    const digitsOnly = text.replace(/[^0-9]/g, '');
+    if (digitsOnly.length >= 6 && text.replace(/[0-9\s\-]/g, '').length === 0) {
+      console.warn('SpeechRecognition: Suppressed isolated raw numeric noise:', text);
+      return false;
+    }
+
+    // Filter out single character repetitions (e.g. "aaaaa", ".....")
+    if (/^(.)\1{4,}$/.test(text)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  // 3. Start live speech recognition for agent voice with validation & confidence filter
   startSpeechRecognition(onResult: (text: string) => void) {
     if (!this.recognition || this.isListening) return;
 
     try {
       this.isListening = true;
       this.recognition.onresult = (event: any) => {
-        // Prevent microphone from transcribing the customer's synthesized voice
-        if (this.isSpeakingAloud) return;
+        // Prevent microphone from transcribing the customer's synthesized voice or acoustic room decay
+        if (this.isSpeakingAloud || Date.now() - this.lastSpeakingEndTime < 400) {
+          return;
+        }
 
         let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
+          const result = event.results[i];
+          if (result.isFinal) {
+            // Check confidence score if provided by browser
+            const confidence = result[0]?.confidence;
+            if (typeof confidence === 'number' && confidence > 0 && confidence < 0.45) {
+              console.warn('SpeechRecognition: Low confidence utterance suppressed:', confidence, result[0].transcript);
+              continue;
+            }
+            finalTranscript += result[0].transcript;
           }
         }
-        if (finalTranscript.trim()) {
-          onResult(finalTranscript.trim());
+
+        const cleaned = finalTranscript.trim();
+        const now = Date.now();
+
+        if (cleaned && this.isValidUtterance(cleaned)) {
+          // Deduplicate identical utterances fired within 2.5 seconds
+          if (cleaned === this.lastProcessedText && now - this.lastProcessedTime < 2500) {
+            return;
+          }
+          this.lastProcessedText = cleaned;
+          this.lastProcessedTime = now;
+          onResult(cleaned);
         }
       };
 
