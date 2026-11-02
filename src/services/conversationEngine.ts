@@ -424,6 +424,7 @@ export class ConversationStateMachine {
           this.hasAddressedFinance = true;
           this.currentStage = 'closing';
           this.pendingQuestion = 'closing';
+          sopFlag = '10-Year Warranty & 12-Month EMI Financing';
           customerReply =
             'A 10-year warranty with 100 nights trial is very reassuring! And zero-downpayment on 12 months EMI fits my monthly budget.';
         } else {
