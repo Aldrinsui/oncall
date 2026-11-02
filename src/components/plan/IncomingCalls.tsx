@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { PhoneOutgoing, Clock, AlertTriangle } from 'lucide-react';
 import { INCOMING_CALLS } from '../../data/mockData';
@@ -21,7 +22,14 @@ export default function IncomingCalls() {
     });
   };
 
-  const totalValueAtStake = '₹77,390';
+  // Dynamically compute aggregate value at stake across all incoming calls
+  const totalValueAtStake = useMemo(() => {
+    const total = INCOMING_CALLS.reduce((acc, call) => {
+      const numeric = parseInt(call.valueAtStake.replace(/[^0-9]/g, ''), 10) || 0;
+      return acc + numeric;
+    }, 0);
+    return `₹${total.toLocaleString('en-IN')}`;
+  }, []);
 
   return (
     <div className="space-y-4">

@@ -112,22 +112,16 @@ export default function CallsToMake() {
                   : 'bg-white border-og-gray-border hover:border-gray-300'
               }`}
             >
-              {/* Row Header — keyboard accessible */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => toggleExpand(lead.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    toggleExpand(lead.id);
-                  }
-                }}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none focus:outline-hidden focus:bg-og-gray/30"
-                aria-expanded={isExpanded}
-                aria-label={`Lead rank #${globalRank}: ${lead.name}, Score: ${lead.attractivenessScore}. Press Enter to toggle details.`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
+              {/* Row Header */}
+              <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 select-none">
+                {/* Lead Summary — Accessible Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(lead.id)}
+                  className="flex items-center gap-3 min-w-0 text-left flex-1 rounded-lg p-1 -m-1 hover:bg-og-gray/40 focus:outline-hidden focus:ring-2 focus:ring-og-green transition-colors"
+                  aria-expanded={isExpanded}
+                  aria-label={`Lead rank #${globalRank}: ${lead.name}, Score: ${lead.attractivenessScore}. Click to toggle details.`}
+                >
                   {/* Rank & Avatar */}
                   <span className="text-xs font-black text-og-forest w-5">#{globalRank}</span>
                   <div
@@ -154,9 +148,9 @@ export default function CallsToMake() {
                       {lead.interest}
                     </div>
                   </div>
-                </div>
+                </button>
 
-                {/* Right side: Scores & Quick Call */}
+                {/* Right side: Scores, Call Action, & Expand Chevron */}
                 <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-og-gray-border">
                   <div className="flex items-center gap-2 text-right">
                     <div className="px-2 py-1 rounded-lg bg-emerald-50 text-og-green text-center">
@@ -170,6 +164,7 @@ export default function CallsToMake() {
                   </div>
 
                   <button
+                    type="button"
                     onClick={(e) => handleStartCall(lead, e)}
                     className="px-3.5 py-1.5 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
                     aria-label={`Call ${lead.name}`}
@@ -178,9 +173,15 @@ export default function CallsToMake() {
                     <span>Call</span>
                   </button>
 
-                  <span className="p-1 rounded-md text-og-gray-text hover:text-[#1c1c1e] hover:bg-og-gray">
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(lead.id)}
+                    className="p-1.5 rounded-md text-og-gray-text hover:text-[#1c1c1e] hover:bg-og-gray transition-colors focus:outline-hidden focus:ring-2 focus:ring-og-green"
+                    aria-expanded={isExpanded}
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} details for ${lead.name}`}
+                  >
                     {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </span>
+                  </button>
                 </div>
               </div>
 

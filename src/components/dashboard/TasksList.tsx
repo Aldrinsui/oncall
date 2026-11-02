@@ -17,8 +17,8 @@ export default function TasksList() {
 
   const [tasks, setTasks] = useState<DailyTask[]>(DAILY_TASKS);
 
-  const toggleTask = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const toggleTask = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setTasks(tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
     const task = tasks.find((t) => t.id === id);
     if (task) {
@@ -64,40 +64,37 @@ export default function TasksList() {
         {tasks.map((task) => (
           <div
             key={task.id}
-            role="button"
-            tabIndex={0}
-            onClick={() => handleTaskClick(task)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleTaskClick(task);
-              }
-            }}
-            className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer group focus:outline-hidden focus:ring-2 focus:ring-og-green ${
+            className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
               task.done
                 ? 'bg-og-gray/30 border-og-gray-border opacity-70'
                 : 'bg-white border-og-gray-border hover:border-og-green/40 hover:shadow-xs'
             }`}
-            aria-label={`Task: ${task.label}. Status: ${task.done ? 'Done' : 'Pending'}. Press Enter to open action.`}
           >
-            <div className="flex items-center gap-3 min-w-0">
-              <button
-                type="button"
-                onClick={(e) => toggleTask(task.id, e)}
-                className="text-og-green hover:text-og-forest transition-colors p-0.5 flex-shrink-0"
-                aria-label={`Toggle task: ${task.label}`}
-              >
-                {task.done ? (
-                  <CheckCircle2 size={18} className="text-og-green fill-og-green-bg" />
-                ) : (
-                  <Square size={18} className="text-gray-300 group-hover:text-og-green" />
-                )}
-              </button>
+            {/* 1. Independent Checkbox Button */}
+            <button
+              type="button"
+              onClick={() => toggleTask(task.id)}
+              className="text-og-green hover:text-og-forest transition-colors p-1 mr-2.5 flex-shrink-0 rounded-md focus:outline-hidden focus:ring-2 focus:ring-og-green"
+              aria-label={`Mark task "${task.label}" as ${task.done ? 'pending' : 'completed'}`}
+            >
+              {task.done ? (
+                <CheckCircle2 size={19} className="text-og-green fill-og-green-bg" />
+              ) : (
+                <Square size={19} className="text-gray-300 hover:text-og-green" />
+              )}
+            </button>
 
-              <div className="min-w-0">
+            {/* 2. Independent Task Action Button */}
+            <button
+              type="button"
+              onClick={() => handleTaskClick(task)}
+              className="flex-1 flex items-center justify-between text-left min-w-0 group focus:outline-hidden focus:ring-2 focus:ring-og-green rounded-md py-0.5 px-1 -ml-1"
+              aria-label={`Open task details: ${task.label}`}
+            >
+              <div className="min-w-0 flex-1">
                 <span
                   className={`text-xs font-semibold block truncate ${
-                    task.done ? 'line-through text-og-gray-text' : 'text-[#1c1c1e]'
+                    task.done ? 'line-through text-og-gray-text' : 'text-[#1c1c1e] group-hover:text-og-forest'
                   }`}
                 >
                   {task.label}
@@ -109,12 +106,12 @@ export default function TasksList() {
                   </span>
                 )}
               </div>
-            </div>
 
-            <ChevronRight
-              size={15}
-              className="text-gray-300 group-hover:text-og-forest transition-colors flex-shrink-0 ml-2"
-            />
+              <ChevronRight
+                size={15}
+                className="text-gray-300 group-hover:text-og-forest transition-colors flex-shrink-0 ml-2"
+              />
+            </button>
           </div>
         ))}
       </div>
