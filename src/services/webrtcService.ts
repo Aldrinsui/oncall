@@ -6,6 +6,8 @@ export class WebRtcService {
   private channel: BroadcastChannel | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private audioElement: HTMLAudioElement | null = null;
+  private pendingOffer: RTCSessionDescriptionInit | null = null;
   private onRemoteStreamCallback: ((stream: MediaStream) => void) | null = null;
   private onPeerMessageCallback: ((data: any) => void) | null = null;
 
@@ -26,7 +28,11 @@ export class WebRtcService {
     this.onPeerMessageCallback = onPeerMessage;
   }
 
-  // Initialize peer connection with standard STUN server
+  getPendingOffer(): RTCSessionDescriptionInit | null {
+    return this.pendingOffer;
+  }
+
+  // Initialize peer connection with standard Google STUN server
   private createPeerConnection(): RTCPeerConnection {
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
@@ -41,6 +47,19 @@ export class WebRtcService {
     pc.ontrack = (event) => {
       if (event.streams && event.streams[0]) {
         this.remoteStream = event.streams[0];
+        // Automatically play remote audio in the browser speaker
+        if (typeof Audio !== 'undefined') {
+          try {
+            if (!this.audioElement) {
+              this.audioElement = new Audio();
+              this.audioElement.autoplay = true;
+            }
+            this.audioElement.srcObject = event.streams[0];
+            this.audioElement.play().catch((err) => console.warn('Peer audio autoplay:', err));
+          } catch (e) {
+            console.warn('Could not attach remote audio stream:', e);
+          }
+        }
         if (this.onRemoteStreamCallback) {
           this.onRemoteStreamCallback(event.streams[0]);
         }
@@ -51,7 +70,7 @@ export class WebRtcService {
   }
 
   // Start outbound WebRTC call
-  async startPeerCall(stream: MediaStream) {
+  async startPeerCall(stream: MediaStream, callerMeta?: any) {
     this.localStream = stream;
     this.peer = this.createPeerConnection();
 
@@ -66,7 +85,11 @@ export class WebRtcService {
     await this.peer.setLocalDescription(offer);
 
     if (this.channel) {
-      this.channel.postMessage({ type: 'offer', sdp: offer });
+      this.channel.postMessage({
+        type: 'offer',
+        sdp: offer,
+        caller: callerMeta || { name: 'Agent (Peer Tab)', phone: 'WebRTC Intercom' },
+      });
     }
   }
 
@@ -91,14 +114,16 @@ export class WebRtcService {
   private async handleSignalMessage(data: any) {
     if (!data) return;
 
-    if (this.onPeerMessageCallback) {
-      this.onPeerMessageCallback(data);
-    }
-
-    if (data.type === 'offer' && this.onPeerMessageCallback) {
-      // Incoming peer call notification
+    if (data.type === 'offer') {
+      this.pendingOffer = data.sdp;
+      if (this.onPeerMessageCallback) {
+        this.onPeerMessageCallback(data);
+      }
     } else if (data.type === 'answer' && this.peer) {
       await this.peer.setRemoteDescription(new RTCSessionDescription(data.sdp));
+      if (this.onPeerMessageCallback) {
+        this.onPeerMessageCallback(data);
+      }
     } else if (data.type === 'candidate' && this.peer) {
       try {
         await this.peer.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -107,6 +132,9 @@ export class WebRtcService {
       }
     } else if (data.type === 'hangup') {
       this.closeCall();
+      if (this.onPeerMessageCallback) {
+        this.onPeerMessageCallback(data);
+      }
     }
   }
 
@@ -122,10 +150,11 @@ export class WebRtcService {
       this.peer.close();
       this.peer = null;
     }
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((t) => t.stop());
-      this.localStream = null;
+    if (this.audioElement) {
+      this.audioElement.pause();
+      this.audioElement.srcObject = null;
     }
+    this.pendingOffer = null;
     this.remoteStream = null;
   }
 }

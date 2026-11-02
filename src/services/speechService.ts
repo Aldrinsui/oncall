@@ -95,6 +95,19 @@ export class SpeechService {
     }
   }
 
+  getStream(): MediaStream | null {
+    return this.micStream;
+  }
+
+  // Real hardware microphone mute: disables/enables audio tracks on the live stream
+  setMuted(muted: boolean) {
+    if (this.micStream) {
+      this.micStream.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
+  }
+
   stopMicrophone() {
     if (this.micStream) {
       this.micStream.getTracks().forEach((track) => track.stop());
@@ -126,7 +139,12 @@ export class SpeechService {
       };
 
       this.recognition.onerror = (e: any) => {
-        console.warn('Speech recognition error:', e);
+        console.warn('Speech recognition error/ended:', e);
+        this.isListening = false;
+      };
+
+      this.recognition.onend = () => {
+        this.isListening = false;
       };
 
       this.recognition.start();

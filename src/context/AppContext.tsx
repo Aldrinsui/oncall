@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useRef, type ReactNode } from 'react';
-import type { View, PlanTab, PulseView, CallTarget } from '../types';
+import type { View, PlanTab, PulseView, CallTarget, RecentCall } from '../types';
+import { RECENT_CALLS } from '../data/mockData';
 
 interface AppContextType {
   activeView: View;
@@ -37,6 +38,8 @@ interface AppContextType {
   setActiveCallTarget: (target: CallTarget | null) => void;
   startCall: (target: CallTarget) => void;
   endCall: () => void;
+  recentCalls: RecentCall[];
+  addRecentCall: (call: RecentCall) => void;
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
@@ -60,6 +63,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
   const [callingLead, setCallingLead] = useState<string | null>(null);
   const [activeCallTarget, setActiveCallTarget] = useState<CallTarget | null>(null);
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>(RECENT_CALLS);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [ogScoreModalOpen, setOgScoreModalOpen] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,6 +91,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCallState('wrapup');
   };
 
+  const addRecentCall = (call: RecentCall) => {
+    setRecentCalls((prev) => [call, ...prev]);
+  };
+
   return (
     <AppContext.Provider value={{
       activeView, setActiveView,
@@ -106,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       callingLead, setCallingLead,
       activeCallTarget, setActiveCallTarget,
       startCall, endCall,
+      recentCalls, addRecentCall,
       toastMessage, showToast,
     }}>
       {children}

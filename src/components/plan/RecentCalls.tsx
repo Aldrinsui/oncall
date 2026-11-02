@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useApp } from '../../context/AppContext';
 import {
   PhoneIncoming,
   PhoneOutgoing,
@@ -8,11 +9,11 @@ import {
   ChevronRight,
   FileCheck,
 } from 'lucide-react';
-import { RECENT_CALLS } from '../../data/mockData';
 import type { RecentCall } from '../../types';
 import CallSopReviewModal from '../modals/CallSopReviewModal';
 
 export default function RecentCalls() {
+  const { recentCalls } = useApp();
   const [selectedCall, setSelectedCall] = useState<RecentCall | null>(null);
 
   const getDirectionIcon = (direction: RecentCall['direction']) => {
@@ -38,13 +39,13 @@ export default function RecentCalls() {
         </div>
 
         <span className="text-xs font-semibold text-og-gray-text self-start sm:self-auto">
-          {RECENT_CALLS.length} Recorded Calls
+          {recentCalls.length} Recorded Calls
         </span>
       </div>
 
       {/* Calls List */}
       <div className="space-y-2.5">
-        {RECENT_CALLS.map((call) => (
+        {recentCalls.map((call) => (
           <div
             key={call.id}
             role="button"

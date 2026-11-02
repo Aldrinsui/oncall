@@ -79,6 +79,13 @@ export default function Calendar() {
   };
 
   const handleCopyLink = () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(window.location.href);
+      }
+    } catch (err) {
+      console.warn('Clipboard copy error:', err);
+    }
     setCopied(true);
     showToast('Meeting invite link copied to clipboard');
     setTimeout(() => setCopied(false), 2000);
@@ -184,16 +191,16 @@ export default function Calendar() {
                     )}
                   </div>
 
-                  {/* Event Dots */}
+                  {/* Event Dots — strictly for November 2026 */}
                   <div className="flex items-center gap-1 mt-auto">
                     {hasEvents && (
                       <span className="w-2 h-2 rounded-full bg-og-green shadow-xs animate-pulse-dot" />
                     )}
-                    {day === 3 && (
-                      <span className="w-2 h-2 rounded-full bg-og-gold shadow-xs" />
+                    {currentMonth === 10 && currentYear === 2026 && day === 3 && (
+                      <span className="w-2 h-2 rounded-full bg-og-gold shadow-xs" title="SOP Coaching" />
                     )}
-                    {day === 14 && (
-                      <span className="w-2 h-2 rounded-full bg-og-blue shadow-xs" />
+                    {currentMonth === 10 && currentYear === 2026 && day === 14 && (
+                      <span className="w-2 h-2 rounded-full bg-og-blue shadow-xs" title="Monthly ASM Review" />
                     )}
                   </div>
                 </button>

@@ -18,16 +18,51 @@ interface PulseChannelProps {
   onBack: () => void;
 }
 
+// Safe parser for predefined system bold tags — eliminates any XSS vulnerability
+function SafeMessageText({ text, isMe }: { text: string; isMe: boolean }) {
+  if (isMe) {
+    // User-submitted messages are rendered strictly as text
+    return <p className="whitespace-pre-wrap">{text}</p>;
+  }
+
+  // Parse safe <b>...</b> in static feed messages without raw HTML injection
+  const segments = text.split(/(<b>.*?<\/b>)/gi);
+  return (
+    <div className="whitespace-pre-wrap">
+      {segments.map((seg, i) => {
+        if (seg.toLowerCase().startsWith('<b>') && seg.toLowerCase().endsWith('</b>')) {
+          return (
+            <strong key={i} className="font-bold">
+              {seg.slice(3, -4)}
+            </strong>
+          );
+        }
+        return <span key={i}>{seg}</span>;
+      })}
+    </div>
+  );
+}
+
 export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
   const { showToast } = useApp();
 
   const channelMeta = PULSE_CHANNELS.find((c) => c.id === channelId) || PULSE_CHANNELS[0];
-  const initialThread = PULSE_THREADS[channelId] || PULSE_THREADS['callcentre-team'];
 
-  const [messages, setMessages] = useState<PulseMessage[]>(initialThread.messages);
+  // Channel-indexed message storage so switching channels immediately loads the correct thread
+  const [threads, setThreads] = useState<Record<string, PulseMessage[]>>(() => {
+    const map: Record<string, PulseMessage[]> = {};
+    Object.keys(PULSE_THREADS).forEach((key) => {
+      map[key] = [...PULSE_THREADS[key].messages];
+    });
+    return map;
+  });
+
   const [inputText, setInputText] = useState('');
   const [needsInputAnswered, setNeedsInputAnswered] = useState<string | null>(null);
   const [customReply, setCustomReply] = useState('');
+
+  const messages = threads[channelId] || (PULSE_THREADS[channelId]?.messages ?? []);
+  const activeThread = PULSE_THREADS[channelId];
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -35,7 +70,7 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, channelId]);
 
   const handleSendMessage = (textToSend?: string) => {
     const content = textToSend || inputText;
@@ -52,7 +87,10 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
       isAgent: true,
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setThreads((prev) => ({
+      ...prev,
+      [channelId]: [...(prev[channelId] || []), newMessage],
+    }));
     setInputText('');
     showToast('Message sent to ' + channelMeta.name);
   };
@@ -65,98 +103,108 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
   const handleCustomNeedsInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customReply.trim()) return;
-    setNeedsInputAnswered(customReply.trim());
-    handleSendMessage(`@Sunita Rao ${customReply.trim()}`);
+    setNeedsInputAnswered(customReply);
+    handleSendMessage(`@Sunita Rao ${customReply}`);
     setCustomReply('');
   };
 
   return (
-    <div className="bg-white rounded-card border border-og-gray-border shadow-md overflow-hidden flex flex-col h-[700px] animate-fade-in">
-      {/* Channel Top Header */}
-      <div className="bg-og-forest text-white p-3.5 px-4 flex items-center justify-between border-b border-white/10">
+    <div className="bg-white rounded-card border border-og-gray-border flex flex-col h-[calc(100vh-180px)] min-h-[500px] shadow-xs overflow-hidden animate-fade-in">
+      {/* Channel Header */}
+      <div className="p-4 border-b border-og-gray-border bg-white flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-white/80 hover:text-white transition-colors"
-            title="Back to Pulse Home"
-            aria-label="Back to Pulse Home"
+            className="p-1.5 rounded-lg border border-og-gray-border hover:bg-og-gray text-[#1c1c1e] transition-colors"
+            aria-label="Back to channels"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={16} />
           </button>
-
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-base font-bold">{channelMeta.name}</span>
-              <span className="text-xs bg-white/15 px-2 py-0.5 rounded-full font-semibold">
-                Shift Channel
+              <h3 className="text-base font-bold text-[#1c1c1e]">{channelMeta.name}</h3>
+              <span className="text-[10px] bg-emerald-50 text-og-green px-2 py-0.5 rounded-full font-bold">
+                Active Channel
               </span>
             </div>
-            <p className="text-[11px] text-[#a9c4ba]">
-              Koramangala Store Call Centre Shift • 8 active staff
-            </p>
+            <p className="text-xs text-og-gray-text">{channelMeta.lastMessage}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-[#a9c4ba]">
-          <Users size={15} />
-          <span className="hidden sm:inline">Active Shift Members</span>
+        <div className="flex items-center gap-1.5 text-xs text-og-gray-text bg-og-gray/60 px-2.5 py-1 rounded-lg">
+          <Users size={14} />
+          <span className="font-semibold">6 Team Members</span>
         </div>
       </div>
 
       {/* Messages Scroll Area */}
-      <div ref={scrollRef} className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-og-gray/20">
-        {/* Pinned "Needs your input" Card */}
-        {initialThread.needsInput && (
-          <div className="p-4 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50/50 border border-amber-200/80 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1.5">
-                <HelpCircle size={13} className="text-og-amber" />
-                Action Required • Needs Your Input
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
+        {/* Date Divider */}
+        <div className="flex items-center justify-center my-2">
+          <span className="text-[11px] font-bold text-og-gray-text bg-white border border-og-gray-border px-3 py-1 rounded-full shadow-2xs">
+            {activeThread?.dateLabel || 'Today'}
+          </span>
+        </div>
+
+        {/* Pinned "Needs Your Input" Card */}
+        {activeThread?.needsInput && (
+          <div className="p-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50/70 to-orange-50/60 shadow-xs space-y-3">
+            <div className="flex items-start gap-2.5">
+              <span className="p-1 rounded-lg bg-amber-100 text-amber-800 flex-shrink-0 mt-0.5">
+                <HelpCircle size={15} />
               </span>
-              {needsInputAnswered && (
-                <span className="text-[11px] font-bold text-og-green bg-emerald-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <CheckCircle2 size={12} />
-                  Responded: {needsInputAnswered}
-                </span>
-              )}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider">
+                    Needs Your Input • Action Required
+                  </span>
+                </div>
+                <h4 className="text-xs font-bold text-[#1c1c1e] mt-0.5">
+                  {activeThread.needsInput.question}
+                </h4>
+              </div>
             </div>
 
-            <p className="text-xs font-bold text-[#1c1c1e]">
-              {initialThread.needsInput.question}
-            </p>
-
-            {/* Quick Answer Option Buttons */}
-            {!needsInputAnswered && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {initialThread.needsInput.options.map((opt) => (
-                  <button
-                    key={opt}
-                    onClick={() => handleAnswerNeedsInput(opt)}
-                    className="px-3.5 py-1.5 bg-white hover:bg-amber-100/60 border border-amber-300 text-amber-900 rounded-lg text-xs font-bold transition-all shadow-xs"
-                  >
-                    {opt}
-                  </button>
-                ))}
+            {needsInputAnswered ? (
+              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-xs text-og-forest font-bold">
+                <CheckCircle2 size={15} className="text-og-green" />
+                <span>Response submitted: "{needsInputAnswered}"</span>
               </div>
-            )}
+            ) : (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {activeThread.needsInput.options.map((opt) => (
+                    <button
+                      key={opt}
+                      onClick={() => handleAnswerNeedsInput(opt)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
+                        opt.includes('Confirmed')
+                          ? 'bg-og-green hover:bg-og-forest text-white'
+                          : 'bg-white hover:bg-gray-100 text-[#1c1c1e] border border-og-gray-border'
+                      }`}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
 
-            {/* Reply Input Box for the Card */}
-            {!needsInputAnswered && (
-              <form onSubmit={handleCustomNeedsInputSubmit} className="flex gap-2 pt-1">
-                <input
-                  type="text"
-                  value={customReply}
-                  onChange={(e) => setCustomReply(e.target.value)}
-                  placeholder="Or type custom slot availability..."
-                  className="flex-1 bg-white border border-amber-200 rounded-lg px-3 py-1.5 text-xs text-[#1c1c1e] placeholder-gray-400 focus:outline-hidden focus:border-amber-400"
-                />
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 text-white rounded-lg text-xs font-bold"
-                >
-                  Reply
-                </button>
-              </form>
+                <form onSubmit={handleCustomNeedsInputSubmit} className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    value={customReply}
+                    onChange={(e) => setCustomReply(e.target.value)}
+                    placeholder="Or type a custom note to Sunita..."
+                    className="flex-1 bg-white border border-og-gray-border rounded-lg px-3 py-1.5 text-xs text-[#1c1c1e] placeholder-gray-400 focus:outline-hidden focus:border-og-green"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!customReply.trim()}
+                    className="px-3 py-1.5 bg-og-forest hover:bg-og-forest-deep disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors"
+                  >
+                    Reply
+                  </button>
+                </form>
+              </div>
             )}
           </div>
         )}
@@ -181,8 +229,9 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
                     ? 'bg-gradient-to-r from-og-green to-og-forest text-white rounded-tr-none'
                     : 'bg-white text-[#1c1c1e] border border-og-gray-border rounded-tl-none'
                 }`}
-                dangerouslySetInnerHTML={{ __html: m.text }}
-              />
+              >
+                <SafeMessageText text={m.text} isMe={isMe} />
+              </div>
             </div>
           );
         })}

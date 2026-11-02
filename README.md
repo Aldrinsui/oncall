@@ -1,37 +1,65 @@
 # On-Ground.ai Call Centre App
 
-A complete, production-grade rebuild of the On-Ground.ai Call Centre application designed for retail tele-calling agents at **The Sleep Company (Koramangala Store)**.
+A production-grade, highly responsive web application built for retail tele-calling agents at **The Sleep Company (Koramangala Store)** for the **On-Ground.ai Engineering Hire Assignment (November 2026)**.
 
-Built from the ground up with **React 18**, **TypeScript**, **Vite**, **Tailwind CSS**, and modern web browser APIs (**Web Audio API**, **Web Speech API**, **WebRTC PeerConnection**, and **Recharts**).
-
----
-
-## 🚀 Live Demo & How to Run
-
-### Quick Start
-```bash
-# 1. Clone the repository
-git clone https://github.com/Aldrinsui/oncall.git
-cd oncall
-
-# 2. Install dependencies
-npm install
-
-# 3. Start local development server
-npm run dev
-```
-
-Visit `http://localhost:5173` in any modern browser (e.g., Google Chrome on macOS / Windows / Linux).
+Repository: [github.com/Aldrinsui/oncall](https://github.com/Aldrinsui/oncall)  
+Built with **React 18**, **TypeScript (Strict Mode)**, **Vite**, **Tailwind CSS 3.4**, **Recharts**, and browser-native **Web Audio**, **Web Speech**, and **WebRTC PeerConnection** APIs.
 
 ---
 
-## 📞 How Calling Works (The Core Calling Engine)
+## 🚀 Live Demo & Deployment
 
-The PDF requirement states:  
+- **Vercel Zero-Config Deployment**: The repository contains `vercel.json` configured for SPA routing.
+- **Local Dev Server**:
+  ```bash
+  # 1. Clone the repository
+  git clone https://github.com/Aldrinsui/oncall.git
+  cd oncall
+
+  # 2. Install dependencies
+  npm install
+
+  # 3. Start local development server
+  npm run dev
+  ```
+  Open `http://localhost:5173` in Google Chrome (Chrome recommended for native Web Speech API support).
+
+- **Production Build & Verification**:
+  ```bash
+  npx tsc -b
+  npm run build
+  npm run preview
+  ```
+
+---
+
+## 📋 Compliance & Feature Status Matrix
+
+| Assignment Requirement | Type | Status | Technical Details |
+|---|---|---|---|
+| **App Shell (Sidebar & Topbar)** | Mandatory | ✅ Complete | Fixed collapsible sidebar, Topbar with OG Score ring, active notifications, and mobile bottom drawer. |
+| **Dashboard** | Mandatory | ✅ Complete | Shift KPIs (`14/18`), live queue with Call Now, earnings (`₹5,200`), 7-day interactive Recharts, and accessible task list. |
+| **Plan — Calls to Make** | Mandatory | ✅ Complete | 6 leads sorted strictly descending by score (`90` to `65`), pagination (2/page), expandable pitch/EMI strategies, decoupled buttons. |
+| **Plan — Incoming Calls** | Mandatory | ✅ Complete | 4 missed calls, dynamic aggregate value at stake (`₹77,390`), and working "Call Back" action on every row. |
+| **Plan — Recent Calls** | Mandatory | ✅ Complete | Direction badges (↙, ↗, ✕), dynamic call logs, and interactive 6-pillar SOP review modal with transcript evidence quotes. |
+| **Calendar** | Mandatory | ✅ Complete | Month grid with event dots strictly scoped to Nov 2026, month switcher, Today jump button, and working clipboard copy. |
+| **Pulse Home & Channel Chat** | Mandatory | ✅ Complete | AvaniBot, 5 role agents, channel switching without stale state, secure text rendering (zero XSS), pinned input reply card. |
+| **Leads Modal** | Mandatory | ✅ Complete | Dossier card with ICP Fit (`87%`) & Intent (`91%`), collapsible signals, next/prev pagination, and direct Call trigger. |
+| **Working Calling Feature** | Mandatory | ✅ Complete | Web Audio API ringing synthesis, SpeechSynthesis voice, mic capture, live STT, hardware mute/hold, and WebRTC peer calling. |
+| **Bonus: Channel Message Sending** | Bonus | ✅ Complete | Working message composer with instant thread updates and optimistic delivery. |
+| **Bonus: "Needs Your Input" Response** | Bonus | ✅ Complete | Pinned card with "Confirmed ✓" and "Reschedule" actions posting directly into chat. |
+| **Bonus: Phone-Width Mobile Support** | Bonus | ✅ Complete | Responsive layouts across all views with custom slide-up sheets and bottom navigation. |
+| **Bonus: 7-Day Performance Charts** | Bonus | ✅ Complete | Interactive SVG charts with metric tabs and dynamic weekly totals. |
+| **Bonus: Practise a Call** | Bonus | ✅ Complete | Interactive scenario cards launching simulated customer dialogue sessions. |
+
+---
+
+## 📞 Calling Architecture (How Calling Truly Works)
+
+The assignment PDF mandates:
 > *"Your product demo must include the CALLING FEATURE WORKING. Mock screens alone are not enough. Explain how you got calling working. Where possible, show human-to-human and AI-to-human calling."*
 
-### 1. Dual-Engine Architecture
-We implemented a complete, multi-modal calling subsystem that supports both **AI-to-Human Voice Roleplay** and **Human-to-Human WebRTC Calling**:
+To satisfy this without fragile third-party telephony accounts (which fail in sandboxes or require paid PSTN credentials), we engineered a **two-path real audio system**:
 
 ```
                        ┌───────────────────────────────────────────┐
@@ -40,149 +68,89 @@ We implemented a complete, multi-modal calling subsystem that supports both **AI
                                              │
                ┌─────────────────────────────┴─────────────────────────────┐
                ▼                                                           ▼
-┌─────────────────────────────┐                             ┌─────────────────────────────┐
-│  AI-to-Human Roleplay Engine │                             │ Human-to-Human Peer Engine  │
-├─────────────────────────────┤                             ├─────────────────────────────┤
-│ • Web Audio API Synthesizer │                             │ • WebRTC RTCPeerConnection  │
-│   (Ring cadence, DTMF keys, │                             │ • BroadcastChannel Signal   │
-│   connect/disconnect chimes)│                             │ • Bidirectional microphone  │
-│ • SpeechSynthesis TTS Voice │                             │   audio between two tabs    │
-│   (Customer speaks out loud)│                             │ • Local Loopback Diagnostic │
-│ • Web Speech STT Recognition│                             └─────────────────────────────┘
-│   (Agent speaks into mic)   │
-│ • AnalyserNode Waveform     │
-│   (Real-time frequency bars)│
-└─────────────────────────────┘
+┌──────────────────────────────────────────┐               ┌──────────────────────────────────────────┐
+│   Speech-Enabled Customer Roleplay       │               │      Human-to-Human WebRTC Intercom      │
+├──────────────────────────────────────────┤               ├──────────────────────────────────────────┤
+│ • Web Audio API (OscillatorNode)         │               │ • RTCPeerConnection (Google STUN)        │
+│   440Hz + 480Hz dual-frequency ringing   │               │ • BroadcastChannel Zero-Server Signaling │
+│ • Web SpeechSynthesis (TTS)              │               │ • Bidirectional microphone audio tracks  │
+│   Real audible customer speech           │               │   between two browser tabs               │
+│ • Web SpeechRecognition (STT)            │               │ • Incoming call offer popover            │
+│   Dictates agent voice to live text      │               │ • Automatic `<audio>` element playback   │
+│ • Dynamic Heuristic Dialogue Tree        │               │ • Hardware-level mic track muting        │
+│ • Real-time sentiment scoring (50-98%)   │               └──────────────────────────────────────────┘
+│ • Transcript-driven SOP evidence quotes  │
+└──────────────────────────────────────────┘
 ```
 
-### 2. Audio & Speech Implementation Details
-- **Zero External Audio Assets**:  
-  All telephone ringing cadences (440Hz + 480Hz dual-frequency US/Indian tone), DTMF keypad sounds, connect chimes, and hangup tones are generated mathematically in real time via the browser's native `AudioContext` and `OscillatorNode` (`src/services/audioService.ts`). There are no missing MP3s or network lag.
-- **AI Speech Synthesis (`speechService.ts`)**:  
-  When an outbound call connects, the AI customer persona answers out loud via `window.speechSynthesis`, dynamically adjusting to objections, EMI queries, and warranty questions.
-- **Real-Time Microphone Visualizer & Speech-to-Text**:  
-  When the agent clicks **"Enable Mic"**, `navigator.mediaDevices.getUserMedia` connects the user's physical microphone to an `AnalyserNode` (`AudioVisualizer.tsx`) rendering real-time frequency waveforms. Simultaneously, `SpeechRecognition` transcribes spoken words into the live transcript.
-- **Dynamic SOP Engine**:  
-  As the conversation progresses, the AI Assist panel automatically evaluates the transcript and checks off SOP compliance items (Opening greeting, Needs discovery, Ergonomic pitch, 12-month EMI, 10-year warranty, Demo booking).
-- **Post-Call Wrap-up & Automated SOP Audit**:  
-  Clicking **End Call** transitions to the **Call Wrap-up Sheet** (`CallWrapupModal.tsx`) to log customer commitment, which immediately routes to the 6-pillar **Call SOP Review Modal** (`CallSopReviewModal.tsx`) showing pass/fail grades and transcript evidence quotes.
+### 1. Web Audio API Synthesis (`src/services/audioService.ts`)
+- Zero external MP3 assets or network dependencies.
+- Standard North American / Indian telephone ring cadence generated mathematically using dual oscillators (440Hz and 480Hz) modulated with a gain node at 2.0s on / 4.0s off intervals.
+- Connect chime (523.25Hz -> 659.25Hz -> 783.99Hz) and disconnect tones.
+
+### 2. Speech-Enabled Customer Roleplay Simulator
+- **Voice Output**: Uses `window.speechSynthesis` with Indian English / natural voice fallback to speak customer objections and questions out loud.
+- **Microphone Input & Analyser**: Captures live audio via `navigator.mediaDevices.getUserMedia`, pipeable to an `AnalyserNode` for the real-time bouncing green frequency visualizer canvas (`AudioVisualizer.tsx`).
+- **Live Transcription**: `SpeechRecognition` transcribes the agent's live voice into streaming transcript blocks.
+- **Heuristic Dialogue & Sentiment Engine**: Analyzes conversation turns for objection keywords (EMI, warranty, mattress types, showroom visits) and computes real-time sentiment scores (clamped 50% to 98%).
+- **Hardware-Level Mute & Hold Controls**:
+  - **Mute**: Directly sets `track.enabled = false` on the hardware audio stream and pauses STT.
+  - **Hold**: Silences audio, pauses the call timer, and clears pending response timers.
+
+### 3. Human-to-Human WebRTC Peer Calling (`src/services/webrtcService.ts`)
+- Enables authentic two-way human audio communication across two browser tabs or windows without an external backend signaling server.
+- Uses the browser's native `BroadcastChannel('onground-callcentre-peer')` for local signaling (SDP offer/answer exchange and ICE candidates).
+- Automatically routes incoming audio tracks to an HTML `<audio autoplay />` element so both agents hear each other in real-time.
+- Tab 1 clicks **"Start WebRTC Peer Call"** -> Tab 2 displays an incoming audio call banner -> Tab 2 clicks **"Accept Peer Audio"** -> Two-way WebRTC audio is active!
+
+### 4. Post-Call Wrap-up & Dynamic SOP Evidence Extraction
+- Maps all 5 outcomes correctly (`Interested`, `Follow-up`, `Requested callback`, `Resolved`, `Not interested`).
+- Extracts verbatim quotes from the actual call transcript (e.g., quotes where the agent pitched EMI or warranty) to provide grounded evidence in the **Call SOP Review Modal**.
+- Appends completed calls directly to the application state so the **Recent Calls** tab updates immediately.
 
 ---
 
-## 🖥️ Screen-by-Screen Overview
+## 🔒 Security & Code Quality
 
-### 1. App Shell (`src/components/shell/`)
-- **Fixed Sidebar**: 224px dark forest green gradient (`#123c30` to `#0d2e26`) with icon chips, active states, collapsible desktop mode (`md:pl-14` toggle), and an expandable **Plan** sub-menu accordion.
-- **Topbar**: OG brand logo, live notification bell with unread action badges, keyboard-accessible **OG Score™** progress ring (`76`) + store standing pill (`⭐#3 Koramangala`), and an interactive agent profile avatar menu.
-- **Mobile Navigation (`MobileNav.tsx`)**: Bottom navigation bar automatically displayed on viewports `< 768px`, complete with a dedicated slide-up **Plan Sub-Navigation Sheet** with full Escape key support.
-- **Modals & Drawers**:
-  - `NotificationsDrawer.tsx`: Slide-out activity feed with typed routing actions (`OPEN_PULSE_CHANNEL`, `OPEN_INCOMING_CALLS`, `OPEN_COACH`).
-  - `SettingsModal.tsx`: Controlled switch for incoming call alerts, audio output selection, and store schedule.
-  - `AvatarModal.tsx`: Agent profile card with score verification and performance tier.
-
-### 2. Dashboard (`src/components/dashboard/`)
-- **Shift Greeting Header**: *"Good afternoon 👋 Arvind Rajan · Koramangala"*, shift hours (`10:00 AM – 7:00 PM`), and store rank `#3 of 14`.
-- **Calling Plan Target**: Scheduled `18` calls, `4m 22s` average duration, `84%` conversion target.
-- **My Shift Progress**: `14/18` calls completed (`78%` animated progress bar).
-- **OG Score™ Card**: Score `76` with circular conic-gradient ring. Clicking opens the **OG Score Breakdown Modal** (`OgScoreModal.tsx`) with 4 mathematically consistent pillars: SOP Adherence (`78`), Objection Handling (`72`), Conversion (`74`), and Sentiment (`81`).
-- **Who is Waiting Now (`LiveQueue.tsx`)**: Real-time inbound waiting queue (Priya Iyer, Suresh Nair) with wait duration badges, intent tags, and 1-click **Call Now** buttons that launch the calling engine.
-- **Earnings & Incentives (`EarningsCard.tsx`)**: `₹5,200` monthly total with breakdown of Base Calls Incentive (`₹3,400`) vs. Conversion Bonuses (`₹1,800`) and next-tier progress bar.
-- **My Shift Tasks (`TasksList.tsx`)**: Interactive task checklist. Clicking lead-related tasks directly launches the **Leads Modal** focused on that specific lead record.
-- **7-Day Performance Charts (`Charts7Day.tsx`)**: Interactive Recharts visualization with metric toggles for **Calls Made**, **Talk Time**, and **Closed Sales** with dynamically calculated totals (`134 calls`, `72.6m avg talk time`, `37 closed`).
-
-### 3. Plan Screen (`src/components/plan/`)
-- **Hero Banner**: Gradient header with date pill (`Tuesday, 3 Nov 2026`).
-- **Sub-Tab Navigation**:
-  1. **Calls to Make (`CallsToMake.tsx`)**:
-     - Ranked strictly by score in descending order (`Mukunda R. 90`, `Rohan P. 88`, `Ritu S. 85`, `Kavita M. 78`, `Suresh N. 72`, `Deepa K. 65`).
-     - Pagination: `Page 1 of 3` with Previous/Next navigation.
-     - Expandable rows detailing recommended pitch strategies, zero-cost EMI options, cross-sell bundles, and buying signals.
-     - Actions: *"Start Outbound Call"* and *"Open Full Lead Dossier"*.
-  2. **Incoming Calls (`IncomingCalls.tsx`)**:
-     - Missed inbound calls queue with value at stake (**`₹77,390` total**).
-     - Frequency badges (*"2nd Missed Call"*, *"3rd Missed Call"*).
-     - **"Call Back" button on every single row**.
-  3. **Recent Calls (`RecentCalls.tsx`)**:
-     - Complete call logs with call direction icons (Inbound ↙, Outbound ↗, Missed ✕), durations, timestamps, and outcome badges.
-     - Clicking any row opens the **Call SOP Review Modal** (`CallSopReviewModal.tsx`) with 6-pillar evaluation and transcript quotes.
-  4. **Practise a Call Launcher**:
-     - Scenario launcher with customer personas (Ortho GRID, SmartGRID Luxe, etc.) for interactive AI voice roleplay.
-
-### 4. Calendar (`src/components/calendar/`)
-- Month grid (November 2026) with weekday headers, event indicator dots, and today highlight.
-- Previous/Next month switcher with a 1-click **"Today"** jump button.
-- Selected Day Agenda displaying scheduled coaching sessions, team huddles, and customer demos.
-- **Share Invite Modal** with meeting link generator and 1-click clipboard copy.
-
-### 5. Pulse Home & Channel Chat (`src/components/pulse/`)
-- **AvaniBot Hero Banner**: AI manager assistant with quick-access team routing.
-- **5 Specialized Shift Agents**:
-  1. *Walk-out Recovery Agent* (`#0f6e56`)
-  2. *Pitch Coach Agent* (`#854f0b`)
-  3. *ASM Agent* (`#1a1a2e`)
-  4. *Tele-caller Agent* (`#4a154b`)
-  5. *Follow-up Agent* (`#185fa5`)
-- **Active Channels List**: `#callcentre-team`, `#customer-discussions`, `#store-updates`, `#escalations` with unread counts.
-- **Team Kudos Feed**: Shift shoutouts with peer reaction counters.
-- **Channel Chat View (`PulseChannel.tsx`)**:
-  - Pinned **"Needs your input"** card: *"Confirm 4:30 PM Friday coaching slot with Sunita?"* with interactive **"Confirmed ✓"** and **"Reschedule"** buttons + reply text input.
-  - Real-time message streaming with left/right speaker bubbles and timestamps.
-  - Interactive reply bar: type a message and press Enter or Send to post immediately.
-
-### 6. Leads Modal (`src/components/modals/LeadsModal.tsx`)
-- Detailed lead dossier displaying avatar, phone, expected value, and status badges.
-- Dual visual meters for **ICP Fit Score** (`87%`) and **Lead Intent Score** (`91%`).
-- Collapsible **"Where We Picked Up Signals"** accordion (Financing, Quotation, Warranty).
-- Next/Previous lead pagination with keyboard Arrow Left / Right navigation.
-- Direct **"Call Lead Now"** button.
-
----
-
-## 🛠️ Technology Stack & Rationale
-
-| Layer | Technology | Rationale |
-|---|---|---|
-| **Framework** | **React 18 + Vite** | Blazing-fast development and optimized production bundling. |
-| **Language** | **TypeScript (Strict Mode)** | End-to-end type safety across all domain models, call states, and events. |
-| **Styling** | **Tailwind CSS 3.4** | Clean design-token system matching On-Ground dark green palette. |
-| **Audio Synthesis** | **Web Audio API** | 100% reliable hardware-level synthesis for phone ringing tones & DTMF keys without external audio files. |
-| **Voice & Speech** | **Web Speech API** | Native `SpeechSynthesis` for customer voice + `SpeechRecognition` for live agent microphone transcription. |
-| **Peer Calling** | **WebRTC + BroadcastChannel** | Multi-tab bidirectional real-time audio calling between agents without external server setup. |
-| **Charts** | **Recharts** | Responsive SVG charts for 7-day performance analytics. |
-| **Icons** | **Lucide React** | Consistent, modern vector iconography. |
+- **Pulse Chat XSS Prevention**: Eliminated `dangerouslySetInnerHTML`. Replaced with a safe `SafeMessageText` component that renders user input strictly as plain text while parsing safe system bold tags.
+- **Channel State Synchronization**: Pulse message threads are indexed by `channelId` to prevent stale message display when switching between channels.
+- **Calendar Event Scoping**: Event indicators are strictly scoped to November 2026.
+- **Accessibility**: Resolved all nested interactive controls in `TasksList.tsx` and `CallsToMake.tsx`, ensuring independent tab stops and accessible `aria-expanded` attributes.
 
 ---
 
 ## 🤖 AI Tools Disclosure
-In compliance with the assignment ground rules:
-- **Claude / Gemini via Antigravity pair programming**: Used for architectural ideation, component scaffolding, and refactoring.
-- **Handcrafted implementation**: All UI layouts, state machines, Web Audio synthesizers, and WebRTC signaling pipelines were written and verified specifically for this project.
+
+In accordance with the assignment guidelines:
+- **Google DeepMind Antigravity**: Used as the primary agentic pair programming environment powered by **Claude** and **Gemini** models for architecture exploration, rapid component development, and test verification.
+- **Handcrafted Domain Logic**: All mock datasets, business logic (SOP grading, OG score formula, lead ranking, and Web Audio synthesizers), and styling were tailored directly to the OnGround.ai assignment requirements.
 
 ---
 
-## 🎬 2-Minute Demo Script
+## 🎬 2-Minute Demo Walkthrough Script
 
-1. **Dashboard Overview (0:00 – 0:30)**:
-   - Check the KPI progress bar (`14/18` calls).
-   - Click the **OG Score (76)** card to inspect the 4-pillar breakdown modal.
-   - Toggle metrics on the **7-Day Performance Chart** (Calls, Talk Time, Conversions).
-   - Click task #1 to open the **Leads Modal** with Mukunda R.
-2. **Calling Engine Demo (0:30 – 1:15)**:
-   - Click **"Call Lead Now"** in the Leads Modal or click **"Call Now"** in the Live Queue.
-   - Listen to the realistic telephone ringing tone synthesized via the Web Audio API.
-   - Click **"Answer / Connect"** to join the live call.
-   - Notice the AI customer speaking aloud via SpeechSynthesis.
-   - Click **"Enable Mic"** or click one of the quick SOP prompts (e.g. *"We offer a 12-month zero-interest EMI..."*).
-   - Observe the live frequency visualizer bars bouncing, real-time transcript streaming, and the SOP checklist auto-checking items!
-   - Click **"End Call"** -> Tag outcome as **"Interested"** -> Click **"Save & View SOP Score"** to review the quality audit.
-3. **Plan Screen & Sorting (1:15 – 1:35)**:
-   - Switch to **Plan**.
-   - Notice all 6 leads are sorted in strict score-descending order (`90 -> 88 -> 85 -> 78 -> 72 -> 65`).
-   - Click **Incoming** to see missed calls with value at stake and Call Back buttons.
-   - Click **Recent** and tap any call to review its historical SOP audit.
-4. **Calendar & Pulse (1:35 – 2:00)**:
-   - Switch to **Calendar**: Click through dates with event dots, click **"Today"**, and click **"Share"** to copy an invite link.
-   - Switch to **Pulse**: View the 5 role agents, open `#callcentre-team`, answer the pinned **"Needs your input"** card with **"Confirmed ✓"**, and send a reply message in the chat thread.
+1. **Dashboard & KPIs (0:00 – 0:30)**:
+   - Review shift progress (`14/18` calls) and the OG Score (`76`).
+   - Open the OG Score card to verify the 4-pillar breakdown (`78, 72, 74, 81 -> 76`).
+   - Switch metrics on the 7-Day Performance Chart (Calls Made, Talk Time, Conversions).
+   - Click task #1 to open the **Leads Modal** with Mukunda R. (`87% ICP`, `91% Intent`).
+2. **Calling Engine & Voice Interaction (0:30 – 1:15)**:
+   - Click **"Call Lead Now"** to trigger realistic telephone ringing synthesized via the Web Audio API.
+   - Click **"Answer / Connect"**; listen to the customer voice speak aloud.
+   - Click **"Enable Mic"** or select a quick prompt (e.g., *"We offer 12-month zero-interest EMI..."*).
+   - Observe the live frequency visualizer bars bouncing, real-time transcript streaming, and the SOP checklist dynamically checking items off.
+   - Test the **Mute** and **Hold** buttons (verifying hardware audio track pause).
+   - Click **"End Call"** -> Tag outcome as **"Interested"** -> View the automated SOP review with verbatim transcript quotes.
+   - Notice the completed call immediately appears in the **Recent Calls** tab!
+3. **Plan Screen & Strict Ranking (1:15 – 1:35)**:
+   - Navigate to **Plan** -> **Calls to Make**.
+   - Verify all 6 leads are strictly ranked by score in descending order (`90 -> 88 -> 85 -> 78 -> 72 -> 65`).
+   - Inspect **Incoming Calls** (dynamic `₹77,390` value at stake, "Call Back" button on each row).
+4. **Calendar, Pulse & WebRTC (1:35 – 2:00)**:
+   - **Calendar**: View November 2026 event dots, test the "Today" button, and copy an invite link.
+   - **Pulse**: Open `#callcentre-team`, answer the pinned "Needs your input" card with **"Confirmed ✓"**, and post a reply in the chat.
+   - **WebRTC Peer Calling**: Open a second tab, click **"Start WebRTC Peer Call"**, and accept on Tab 2 for multi-tab intercom audio!
 
 ---
-*Developed for the On-Ground.ai Engineering Hiring Assessment — November 2026.*
+
+*Developed for the On-Ground.ai Engineering Hiring Assessment.*
