@@ -11,18 +11,37 @@ import {
   Check,
   X,
   Users,
+  MessageSquare,
+  Send,
+  MapPin,
+  AlertCircle,
 } from 'lucide-react';
 import { CALENDAR_INVITES } from '../../data/mockData';
 import type { CalendarInvite } from '../../types';
+import {
+  CALENDAR_COLLABORATORS,
+  generateSessionUrl,
+  formatSessionDateTime,
+  formatWhatsAppInvite,
+  generateWhatsAppShareUrl,
+  formatPulseInviteMessage,
+  validateCollaboratorSelection,
+  type Collaborator,
+} from '../../services/calendarService';
 
 export default function Calendar() {
-  const { setActiveView, setActiveChannelId, setPulseView, showToast } = useApp();
+  const { setActiveView, setActiveChannelId, setPulseView, showToast, sendPulseMessage } = useApp();
 
   const [currentYear, setCurrentYear] = useState(2026);
   const [currentMonth, setCurrentMonth] = useState(10); // 10 is November (0-indexed)
   const [selectedDay, setSelectedDay] = useState(3); // Default to Nov 3 (Today in mock)
   const [shareModalInvite, setShareModalInvite] = useState<CalendarInvite | null>(null);
+
+  // Invite Collaborators Modal State
+  const [selectedRecipients, setSelectedRecipients] = useState<string[]>(['sunita', 'callcentre']);
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -78,17 +97,70 @@ export default function Calendar() {
     }
   };
 
-  const handleCopyLink = () => {
+  const handleOpenShareModal = (invite: CalendarInvite) => {
+    setShareModalInvite(invite);
+    setSelectedRecipients(['sunita', 'callcentre']);
+    setCopied(false);
+    setCopyError(null);
+    setValidationError(null);
+  };
+
+  const handleToggleRecipient = (id: string) => {
+    setValidationError(null);
+    setSelectedRecipients((prev) =>
+      prev.includes(id) ? prev.filter((r) => r !== id) : [...prev, id]
+    );
+  };
+
+  const getSelectedCollaboratorObjects = (): Collaborator[] => {
+    return CALENDAR_COLLABORATORS.filter((c) => selectedRecipients.includes(c.id));
+  };
+
+  const handleCopyLink = async (sessionUrl: string) => {
     try {
       if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(window.location.href);
+        await navigator.clipboard.writeText(sessionUrl);
+        setCopied(true);
+        setCopyError(null);
+        showToast('Session invitation link copied to clipboard');
+        setTimeout(() => setCopied(false), 2500);
+      } else {
+        throw new Error('Clipboard API unavailable in current environment');
       }
     } catch (err) {
       console.warn('Clipboard copy error:', err);
+      setCopyError('Unable to access clipboard automatically. Please copy the link manually.');
+      showToast('Failed to copy. Please copy the URL manually.');
     }
-    setCopied(true);
-    showToast('Meeting invite link copied to clipboard');
-    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShareWhatsApp = (invite: CalendarInvite, sessionUrl: string) => {
+    const selected = getSelectedCollaboratorObjects();
+    const waUrl = generateWhatsAppShareUrl(invite, selected, sessionUrl);
+    if (typeof window !== 'undefined') {
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+    }
+    showToast('Opening WhatsApp to share invitation card...');
+  };
+
+  const handlePostToPulse = (invite: CalendarInvite, sessionUrl: string) => {
+    const selected = getSelectedCollaboratorObjects();
+    const message = formatPulseInviteMessage(invite, selected, sessionUrl);
+    sendPulseMessage('callcentre-team', message);
+    showToast('Session invitation posted to #callcentre-team on Pulse');
+  };
+
+  const handlePrepareInvitation = (invite: CalendarInvite) => {
+    const validation = validateCollaboratorSelection(selectedRecipients);
+    if (!validation.isValid) {
+      setValidationError(validation.error || 'Please select at least one recipient.');
+      return;
+    }
+
+    const selected = getSelectedCollaboratorObjects();
+    const names = selected.map((c) => c.name).join(', ');
+    showToast(`Invitations prepared for ${names}. Session link is ready.`);
+    setShareModalInvite(null);
   };
 
   return (
@@ -109,14 +181,14 @@ export default function Calendar() {
         <div className="flex items-center gap-2 self-start sm:self-auto bg-white/10 p-1.5 rounded-xl backdrop-blur-xs">
           <button
             onClick={handleToday}
-            className="px-3 py-1 bg-og-green hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors"
+            className="px-3 py-1 bg-og-green hover:bg-emerald-600 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
           >
             Today
           </button>
           <div className="h-4 w-[1px] bg-white/20 mx-1" />
           <button
             onClick={handlePrevMonth}
-            className="p-1 rounded-lg hover:bg-white/10 text-white transition-colors"
+            className="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer"
             aria-label="Previous month"
           >
             <ChevronLeft size={18} />
@@ -126,7 +198,7 @@ export default function Calendar() {
           </span>
           <button
             onClick={handleNextMonth}
-            className="p-1 rounded-lg hover:bg-white/10 text-white transition-colors"
+            className="p-1 rounded-lg hover:bg-white/10 text-white transition-colors cursor-pointer"
             aria-label="Next month"
           >
             <ChevronRight size={18} />
@@ -165,7 +237,7 @@ export default function Calendar() {
                 <button
                   key={day}
                   onClick={() => setSelectedDay(day)}
-                  className={`h-16 sm:h-20 p-1.5 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                  className={`h-16 sm:h-20 p-1.5 sm:p-2 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
                     isSelected
                       ? 'border-2 border-og-green bg-emerald-50/50 shadow-xs'
                       : 'border-og-gray-border bg-white hover:border-gray-300 hover:bg-gray-50/70'
@@ -245,10 +317,10 @@ export default function Calendar() {
                       {invite.time}
                     </span>
                     <button
-                      onClick={() => setShareModalInvite(invite)}
-                      className="p-1 rounded-md text-og-gray-text hover:text-[#1c1c1e] hover:bg-white transition-colors"
-                      title="Share invite link"
-                      aria-label="Share session invite"
+                      onClick={() => handleOpenShareModal(invite)}
+                      className="p-1 rounded-md text-og-gray-text hover:text-[#1c1c1e] hover:bg-white transition-colors cursor-pointer"
+                      title="Invite collaborators & share link"
+                      aria-label="Invite collaborators to session"
                     >
                       <Share2 size={14} />
                     </button>
@@ -262,7 +334,7 @@ export default function Calendar() {
                   <div className="pt-2 border-t border-og-gray-border flex items-center justify-between">
                     <button
                       onClick={() => handleJoinSession(invite)}
-                      className="w-full py-1.5 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
+                      className="w-full py-1.5 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs cursor-pointer"
                     >
                       <Video size={13} />
                       <span>Join / Open Session</span>
@@ -275,62 +347,250 @@ export default function Calendar() {
         </div>
       </div>
 
-      {/* Share Invite Modal */}
-      {shareModalInvite && (
-        <div
-          className="fixed inset-0 z-50 overflow-y-auto"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Share meeting invitation"
-        >
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div
-              className="fixed inset-0 bg-black/50 backdrop-blur-xs"
-              onClick={() => setShareModalInvite(null)}
-              aria-hidden="true"
-            />
+      {/* Invite Collaborators Modal */}
+      {shareModalInvite && (() => {
+        const sessionUrl = generateSessionUrl(shareModalInvite);
+        const formattedDateTime = formatSessionDateTime(
+          shareModalInvite.day,
+          shareModalInvite.time,
+          currentYear,
+          currentMonth
+        );
 
-            <div className="relative w-full max-w-md bg-white rounded-sheet shadow-2xl p-5 border border-og-gray-border space-y-4 animate-fade-in">
-              <div className="flex items-center justify-between pb-3 border-b border-og-gray-border">
-                <div>
-                  <span className="text-[10px] font-bold text-og-green uppercase tracking-wider">
-                    Meeting Invite
-                  </span>
-                  <h3 className="text-base font-bold text-[#1c1c1e]">Share Session Link</h3>
+        return (
+          <div
+            className="fixed inset-0 z-50 overflow-y-auto"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Invite collaborators to session"
+          >
+            <div className="flex min-h-full items-center justify-center p-4">
+              <div
+                className="fixed inset-0 bg-black/50 backdrop-blur-xs transition-opacity"
+                onClick={() => setShareModalInvite(null)}
+                aria-hidden="true"
+              />
+
+              <div className="relative w-full max-w-lg bg-white rounded-sheet shadow-2xl p-5 sm:p-6 border border-og-gray-border space-y-4 animate-fade-in z-10">
+                {/* Modal Header */}
+                <div className="flex items-start justify-between pb-3 border-b border-og-gray-border">
+                  <div>
+                    <div className="text-[10px] font-bold text-og-green uppercase tracking-wider">
+                      ONGROUND CALENDAR
+                    </div>
+                    <h3 className="text-lg font-bold text-[#1c1c1e] mt-0.5">Invite collaborators</h3>
+                    <p className="text-xs text-og-gray-text mt-0.5">
+                      Get the right people into the session.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShareModalInvite(null)}
+                    className="w-8 h-8 rounded-full bg-og-gray flex items-center justify-center text-og-gray-text hover:text-[#1c1c1e] transition-colors cursor-pointer"
+                    aria-label="Close modal"
+                  >
+                    <X size={16} />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShareModalInvite(null)}
-                  className="w-8 h-8 rounded-full bg-og-gray flex items-center justify-center text-og-gray-text hover:text-[#1c1c1e]"
-                  aria-label="Close modal"
-                >
-                  <X size={16} />
-                </button>
-              </div>
 
-              <div className="p-3 bg-og-gray/60 rounded-xl space-y-1 text-xs">
-                <div className="font-bold text-[#1c1c1e]">{shareModalInvite.title}</div>
-                <div className="text-og-gray-text">{shareModalInvite.time} • {shareModalInvite.meta}</div>
-              </div>
+                {/* Session Card Preview */}
+                <div className="p-3.5 bg-og-gray/40 rounded-xl border border-og-gray-border space-y-1">
+                  <div className="text-[9px] font-bold uppercase tracking-wider text-og-forest">
+                    TEAM SESSION
+                  </div>
+                  <div className="font-bold text-sm text-[#1c1c1e]">{shareModalInvite.title}</div>
+                  <div className="text-xs text-og-gray-text flex items-center gap-1.5 pt-0.5">
+                    <Clock size={12} className="text-og-green shrink-0" />
+                    <span>{formattedDateTime}</span>
+                  </div>
+                  <div className="text-xs text-gray-500 flex items-center gap-1.5">
+                    <MapPin size={12} className="text-gray-400 shrink-0" />
+                    <span>{shareModalInvite.meta}</span>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-2 p-2 bg-og-gray rounded-xl border border-og-gray-border text-xs">
-                <input
-                  type="text"
-                  readOnly
-                  value={`https://on-ground.ai/meet/session-${shareModalInvite.day}-nov`}
-                  className="flex-1 bg-transparent border-none text-[#1c1c1e] focus:outline-hidden font-mono text-[11px]"
-                />
-                <button
-                  onClick={handleCopyLink}
-                  className="px-3 py-1 bg-og-green hover:bg-og-forest text-white rounded-lg font-bold flex items-center gap-1 transition-colors"
-                >
-                  {copied ? <Check size={13} /> : <Copy size={13} />}
-                  <span>{copied ? 'Copied!' : 'Copy'}</span>
-                </button>
+                {/* Section 01: Invite People */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-og-gray-text">
+                        01 / Invite people
+                      </div>
+                      <div className="text-xs font-semibold text-[#1c1c1e]">
+                        Select who should receive this invitation.
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-medium text-og-gray-text">
+                      {selectedRecipients.length} selected
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {CALENDAR_COLLABORATORS.map((c) => {
+                      const isSelected = selectedRecipients.includes(c.id);
+                      return (
+                        <div
+                          key={c.id}
+                          onClick={() => handleToggleRecipient(c.id)}
+                          role="checkbox"
+                          aria-checked={isSelected}
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === ' ' || e.key === 'Enter') {
+                              e.preventDefault();
+                              handleToggleRecipient(c.id);
+                            }
+                          }}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'border-og-green bg-emerald-50/50 shadow-xs'
+                              : 'border-og-gray-border bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 shadow-xs"
+                              style={{ backgroundColor: c.bg, color: c.color }}
+                            >
+                              {c.initials}
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-[#1c1c1e]">{c.name}</div>
+                              <div className="text-[11px] text-og-gray-text">{c.role}</div>
+                            </div>
+                          </div>
+
+                          <div
+                            className={`w-5 h-5 rounded-md flex items-center justify-center border transition-colors ${
+                              isSelected
+                                ? 'bg-og-green border-og-green text-white'
+                                : 'border-gray-300 bg-white'
+                            }`}
+                          >
+                            {isSelected && <Check size={13} strokeWidth={3} />}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section 02: Share Session */}
+                <div className="space-y-2.5 pt-1 border-t border-og-gray-border">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-og-gray-text">
+                      02 / Share session
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <span className="text-xs font-semibold text-[#1c1c1e]">
+                        Session invitation link
+                      </span>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          copied
+                            ? 'bg-emerald-100 text-og-forest'
+                            : 'bg-og-gray text-og-gray-text'
+                        }`}
+                      >
+                        {copied ? 'Copied to clipboard' : 'Ready to copy'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-og-gray-text mt-0.5">
+                      A unique link associated with this session.
+                    </p>
+                  </div>
+
+                  {/* URL Input and Copy Button */}
+                  <div className="flex items-center gap-2 p-1.5 bg-og-gray rounded-xl border border-og-gray-border text-xs">
+                    <input
+                      type="text"
+                      readOnly
+                      value={sessionUrl}
+                      className="flex-1 bg-transparent border-none text-[#1c1c1e] focus:outline-hidden font-mono text-[11px] px-2 truncate"
+                      aria-label="Session link"
+                    />
+                    <button
+                      onClick={() => handleCopyLink(sessionUrl)}
+                      className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 text-xs transition-colors cursor-pointer shrink-0 ${
+                        copied
+                          ? 'bg-emerald-700 text-white'
+                          : 'bg-og-green hover:bg-og-forest text-white shadow-xs'
+                      }`}
+                      aria-label="Copy session link"
+                    >
+                      {copied ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{copied ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+
+                  {copyError && (
+                    <div className="text-[11px] text-red-600 flex items-center gap-1 mt-1">
+                      <AlertCircle size={12} />
+                      <span>{copyError}</span>
+                    </div>
+                  )}
+
+                  {/* Multi-Channel Sharing Actions: WhatsApp & Pulse */}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => handleShareWhatsApp(shareModalInvite, sessionUrl)}
+                      className="p-2.5 rounded-xl border border-og-gray-border bg-white hover:bg-emerald-50/40 hover:border-og-green transition-all flex items-center gap-2 text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Send size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-[#1c1c1e]">WhatsApp</div>
+                        <div className="text-[10px] text-og-gray-text truncate">Share invitation</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handlePostToPulse(shareModalInvite, sessionUrl)}
+                      className="p-2.5 rounded-xl border border-og-gray-border bg-white hover:bg-purple-50/40 hover:border-purple-400 transition-all flex items-center gap-2 text-left cursor-pointer group"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                        <Users size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-[#1c1c1e]">Pulse</div>
+                        <div className="text-[10px] text-og-gray-text truncate">Post to team channel</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Validation Error Banner */}
+                {validationError && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs flex items-center gap-2">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{validationError}</span>
+                  </div>
+                )}
+
+                {/* Action Footer */}
+                <div className="pt-2 border-t border-og-gray-border">
+                  <button
+                    type="button"
+                    onClick={() => handlePrepareInvitation(shareModalInvite)}
+                    disabled={selectedRecipients.length === 0}
+                    className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
+                      selectedRecipients.length === 0
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : 'bg-og-green hover:bg-og-forest text-white shadow-sm cursor-pointer'
+                    }`}
+                  >
+                    <span>
+                      Prepare invitation · {selectedRecipients.length} selected
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

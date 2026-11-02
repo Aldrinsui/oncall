@@ -11,8 +11,9 @@ import type {
   DailyTask,
   QueuedCaller,
   ChartDataPoint,
+  PulseMessage,
 } from '../types';
-import { RECENT_CALLS, SELLING_PERSONAS, DAILY_TASKS, CALL_QUEUE, CHART_DATA } from '../data/mockData';
+import { RECENT_CALLS, SELLING_PERSONAS, DAILY_TASKS, CALL_QUEUE, CHART_DATA, PULSE_THREADS } from '../data/mockData';
 import {
   calculateShiftProgress,
   calculateShiftPace,
@@ -96,6 +97,9 @@ interface AppContextType {
   toggleTask: (taskId: string) => void;
   callQueue: QueuedCaller[];
   acceptQueueCaller: (callerId: string) => void;
+  // Pulse Channels & Messages
+  pulseMessages: Record<string, PulseMessage[]>;
+  sendPulseMessage: (channelId: string, text: string) => PulseMessage;
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
@@ -276,6 +280,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  // Central Pulse Messaging State with LocalStorage Persistence
+  const [pulseMessages, setPulseMessages] = useState<Record<string, PulseMessage[]>>(() => {
+    try {
+      const saved = localStorage.getItem('onground_pulse_messages');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to parse pulse messages from localStorage', e);
+    }
+    const map: Record<string, PulseMessage[]> = {};
+    Object.keys(PULSE_THREADS).forEach((key) => {
+      map[key] = [...PULSE_THREADS[key].messages];
+    });
+    return map;
+  });
+
+  const sendPulseMessage = (channelId: string, text: string): PulseMessage => {
+    const newMessage: PulseMessage = {
+      id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      who: 'Arvind Rajan',
+      initials: 'AR',
+      bg: '#e1f5ee',
+      color: '#0f6e56',
+      text: text.trim(),
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isAgent: true,
+    };
+
+    setPulseMessages((prev) => {
+      const updated = {
+        ...prev,
+        [channelId]: [...(prev[channelId] || []), newMessage],
+      };
+      try {
+        localStorage.setItem('onground_pulse_messages', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to persist pulse messages', e);
+      }
+      return updated;
+    });
+
+    return newMessage;
+  };
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [ogScoreModalOpen, setOgScoreModalOpen] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -390,6 +440,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       shiftProgress, shiftPace, avgTalkTime, conversions, earnings, weeklyChartData,
       dailyTasks, toggleTask,
       callQueue, acceptQueueCaller,
+      pulseMessages, sendPulseMessage,
       recordingConsent, setRecordingConsent,
       currentConsent, grantConsent, declineConsent, resetConsent,
       toastMessage, showToast,

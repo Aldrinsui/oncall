@@ -44,24 +44,15 @@ function SafeMessageText({ text, isMe }: { text: string; isMe: boolean }) {
 }
 
 export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
-  const { showToast } = useApp();
+  const { showToast, pulseMessages, sendPulseMessage } = useApp();
 
   const channelMeta = PULSE_CHANNELS.find((c) => c.id === channelId) || PULSE_CHANNELS[0];
-
-  // Channel-indexed message storage so switching channels immediately loads the correct thread
-  const [threads, setThreads] = useState<Record<string, PulseMessage[]>>(() => {
-    const map: Record<string, PulseMessage[]> = {};
-    Object.keys(PULSE_THREADS).forEach((key) => {
-      map[key] = [...PULSE_THREADS[key].messages];
-    });
-    return map;
-  });
 
   const [inputText, setInputText] = useState('');
   const [needsInputAnswered, setNeedsInputAnswered] = useState<string | null>(null);
   const [customReply, setCustomReply] = useState('');
 
-  const messages = threads[channelId] || (PULSE_THREADS[channelId]?.messages ?? []);
+  const messages = pulseMessages[channelId] || (PULSE_THREADS[channelId]?.messages ?? []);
   const activeThread = PULSE_THREADS[channelId];
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -76,21 +67,7 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
     const content = textToSend || inputText;
     if (!content.trim()) return;
 
-    const newMessage: PulseMessage = {
-      id: `m-${Date.now()}`,
-      who: 'Arvind Rajan',
-      initials: 'AR',
-      bg: '#e1f5ee',
-      color: '#0f6e56',
-      text: content.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isAgent: true,
-    };
-
-    setThreads((prev) => ({
-      ...prev,
-      [channelId]: [...(prev[channelId] || []), newMessage],
-    }));
+    sendPulseMessage(channelId, content.trim());
     setInputText('');
     showToast('Message sent to ' + channelMeta.name);
   };
