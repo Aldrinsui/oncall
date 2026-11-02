@@ -125,6 +125,13 @@ export interface PulseThread {
 }
 
 // ─── Notifications ──────────────────────────────────────────────
+export type NotificationActionType =
+  | 'OPEN_PULSE_CHANNEL'
+  | 'OPEN_INCOMING_CALLS'
+  | 'OPEN_COACH'
+  | 'VIEW_SCORE'
+  | 'VIEW_RANK';
+
 export interface Notification {
   id: string;
   needsAction: boolean;
@@ -133,6 +140,8 @@ export interface Notification {
   title: string;
   time: string;
   cta: string;
+  actionType?: NotificationActionType;
+  actionPayload?: string;
 }
 
 // ─── Dashboard ──────────────────────────────────────────────────

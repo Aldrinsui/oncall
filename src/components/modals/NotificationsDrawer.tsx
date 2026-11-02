@@ -30,21 +30,29 @@ export default function NotificationsDrawer() {
   const handleCtaClick = (item: typeof NOTIFICATIONS[0]) => {
     setNotificationsOpen(false);
 
-    if (item.title.includes('#callcentre-team') || item.cta.includes('#callcentre-team')) {
-      setActiveView('pulse');
-      setPulseView('channel');
-      setActiveChannelId('callcentre-team');
-      showToast('Navigated to #callcentre-team channel');
-    } else if (item.cta.includes('Call Back') || item.title.includes('called 3 times')) {
-      setActiveView('plan');
-      setPlanTab('incoming');
-      showToast('Navigated to Incoming / Missed calls queue');
-    } else if (item.cta.includes('Open Coach')) {
-      setActiveView('pulse');
-      setPulseView('home');
-      showToast('Navigated to Skill Coach in Pulse');
-    } else if (item.cta.includes('View Score') || item.cta.includes('View Rank')) {
-      setActiveView('dashboard');
+    switch (item.actionType) {
+      case 'OPEN_PULSE_CHANNEL':
+        setActiveView('pulse');
+        setPulseView('channel');
+        setActiveChannelId(item.actionPayload || 'callcentre-team');
+        showToast(`Navigated to #${item.actionPayload || 'callcentre-team'} channel`);
+        break;
+      case 'OPEN_INCOMING_CALLS':
+        setActiveView('plan');
+        setPlanTab('incoming');
+        showToast('Navigated to Incoming / Missed calls queue');
+        break;
+      case 'OPEN_COACH':
+        setActiveView('pulse');
+        setPulseView('home');
+        showToast('Navigated to Skill Coach in Pulse');
+        break;
+      case 'VIEW_SCORE':
+      case 'VIEW_RANK':
+        setActiveView('dashboard');
+        break;
+      default:
+        setActiveView('dashboard');
     }
   };
 

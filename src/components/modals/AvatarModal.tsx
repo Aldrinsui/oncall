@@ -1,19 +1,29 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { X, Check } from 'lucide-react';
 import { USER } from '../../data/mockData';
 
 export default function AvatarModal() {
   const { avatarModalOpen, setAvatarModalOpen, showToast } = useApp();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previouslyFocusedElement = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && avatarModalOpen) {
-        setAvatarModalOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    if (avatarModalOpen) {
+      previouslyFocusedElement.current = document.activeElement as HTMLElement;
+      setTimeout(() => closeButtonRef.current?.focus(), 50);
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setAvatarModalOpen(false);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+        previouslyFocusedElement.current?.focus();
+      };
+    }
   }, [avatarModalOpen, setAvatarModalOpen]);
 
   if (!avatarModalOpen) return null;
@@ -35,8 +45,9 @@ export default function AvatarModal() {
               <h3 className="text-base font-bold">Agent Profile Badge</h3>
             </div>
             <button
+              ref={closeButtonRef}
               onClick={() => setAvatarModalOpen(false)}
-              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white"
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white focus:outline-hidden focus:ring-2 focus:ring-white"
               aria-label="Close avatar modal"
             >
               <X size={16} />

@@ -237,11 +237,57 @@ export const PULSE_THREADS: Record<string, PulseThread> = {
 // ─── Notifications ──────────────────────────────────────────────
 
 export const NOTIFICATIONS: Notification[] = [
-  { id: 'n1', needsAction: true, icon: '☎️', color: '#854f0b', title: 'Sunita Rao is checking greeting-QA scores Friday — reply in #callcentre-team', time: '2:05 PM', cta: 'Open #callcentre-team' },
-  { id: 'n2', needsAction: true, icon: '🎯', color: '#5b21b6', title: 'Skill Improvement Coach is waiting on you to pick a skill to practice', time: 'Today', cta: 'Open Coach' },
-  { id: 'n3', needsAction: false, icon: '📊', color: '#1d9e75', title: 'Your OG Score improved to 76 — up 3 pts this week!', time: 'Today', cta: 'View Score' },
-  { id: 'n4', needsAction: false, icon: '⭐', color: '#c8860a', title: 'You\'re now ranked #3 in Koramangala — keep it up!', time: 'Yesterday', cta: 'View Rank' },
-  { id: 'n5', needsAction: true, icon: '📞', color: '#e24b4a', title: 'Rajesh K. has called 3 times — ₹31,000 at stake', time: '2 hrs ago', cta: 'Call Back' },
+  {
+    id: 'n1',
+    needsAction: true,
+    icon: '☎️',
+    color: '#854f0b',
+    title: 'Sunita Rao is checking greeting-QA scores Friday — reply in #callcentre-team',
+    time: '2:05 PM',
+    cta: 'Open #callcentre-team',
+    actionType: 'OPEN_PULSE_CHANNEL',
+    actionPayload: 'callcentre-team',
+  },
+  {
+    id: 'n2',
+    needsAction: true,
+    icon: '🎯',
+    color: '#5b21b6',
+    title: 'Skill Improvement Coach is waiting on you to pick a skill to practice',
+    time: 'Today',
+    cta: 'Open Coach',
+    actionType: 'OPEN_COACH',
+  },
+  {
+    id: 'n3',
+    needsAction: false,
+    icon: '📊',
+    color: '#1d9e75',
+    title: 'Your OG Score improved to 76 — up 3 pts this week!',
+    time: 'Today',
+    cta: 'View Score',
+    actionType: 'VIEW_SCORE',
+  },
+  {
+    id: 'n4',
+    needsAction: false,
+    icon: '⭐',
+    color: '#c8860a',
+    title: "You're now ranked #3 in Koramangala — keep it up!",
+    time: 'Yesterday',
+    cta: 'View Rank',
+    actionType: 'VIEW_RANK',
+  },
+  {
+    id: 'n5',
+    needsAction: true,
+    icon: '📞',
+    color: '#e24b4a',
+    title: 'Rajesh K. has called 3 times — ₹31,000 at stake',
+    time: '2 hrs ago',
+    cta: 'Call Back',
+    actionType: 'OPEN_INCOMING_CALLS',
+  },
 ];
 
 // ─── Dashboard KPIs ─────────────────────────────────────────────

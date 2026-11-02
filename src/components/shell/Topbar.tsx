@@ -61,14 +61,13 @@ export default function Topbar() {
           )}
         </button>
 
-        {/* OG Score + Rank pill */}
-        <div
-          className="flex items-center gap-1.5 bg-gradient-to-r from-amber-100/20 to-amber-200/10 rounded-full py-0.5 px-2.5 cursor-pointer hover:bg-white/15 transition-colors"
-          title={`OG Score: ${USER.ogScore} | Rank: #${USER.rank} in ${USER.rankLocation}`}
+        {/* OG Score + Rank pill — native keyboard accessible button */}
+        <button
+          type="button"
           onClick={handleAvatarClick}
-          role="button"
-          tabIndex={0}
-          aria-label={`OG Score ${USER.ogScore}, Rank number ${USER.rank}`}
+          className="flex items-center gap-1.5 bg-gradient-to-r from-amber-100/20 to-amber-200/10 rounded-full py-0.5 px-2.5 cursor-pointer hover:bg-white/15 transition-colors focus:outline-hidden focus:ring-2 focus:ring-amber-300"
+          title={`OG Score: ${USER.ogScore} | Rank: #${USER.rank} in ${USER.rankLocation}`}
+          aria-label={`OG Score ${USER.ogScore}, Rank number ${USER.rank} in ${USER.rankLocation}. Click to view details.`}
         >
           <span
             className="og-ring sm"
@@ -79,7 +78,7 @@ export default function Topbar() {
           <span className="text-xs font-bold text-amber-200 tracking-wide">
             ⭐#{USER.rank}
           </span>
-        </div>
+        </button>
 
         {/* User badge */}
         <div className="relative">

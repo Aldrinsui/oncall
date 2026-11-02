@@ -18,6 +18,10 @@ interface AppContextType {
   setNotificationsOpen: (open: boolean) => void;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  incomingAlerts: boolean;
+  setIncomingAlerts: (enabled: boolean) => void;
+  audioOutput: string;
+  setAudioOutput: (output: string) => void;
   avatarModalOpen: boolean;
   setAvatarModalOpen: (open: boolean) => void;
   sidebarCollapsed: boolean;
@@ -43,6 +47,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [leadsModalPage, setLeadsModalPage] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [incomingAlerts, setIncomingAlerts] = useState(true);
+  const [audioOutput, setAudioOutput] = useState('Web Audio Synth (Active)');
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
@@ -66,6 +72,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       leadsModalPage, setLeadsModalPage,
       notificationsOpen, setNotificationsOpen,
       settingsOpen, setSettingsOpen,
+      incomingAlerts, setIncomingAlerts,
+      audioOutput, setAudioOutput,
       avatarModalOpen, setAvatarModalOpen,
       sidebarCollapsed, setSidebarCollapsed,
       callState, setCallState,
