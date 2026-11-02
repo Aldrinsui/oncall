@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { View, PlanTab } from '../../types';
+import { LEADS } from '../../data/mockData';
 
 const NAV_ITEMS: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -38,9 +39,7 @@ export default function Sidebar() {
     setPlanTab,
     sidebarCollapsed,
     setSidebarCollapsed,
-    setCallState,
-    setCallingLead,
-    showToast,
+    startCall,
   } = useApp();
   const [planOpen, setPlanOpen] = useState(activeView === 'plan');
 
@@ -60,9 +59,19 @@ export default function Sidebar() {
     setPlanOpen(true);
 
     if (tab === 'practise') {
-      setCallingLead('l1'); // Mukunda R. practice call
-      setCallState('ringing');
-      showToast('Initiating AI Practise Call simulation...');
+      const lead = LEADS[0];
+      startCall({
+        id: lead.id,
+        name: `${lead.name} (AI Roleplay Practise)`,
+        initials: lead.initials,
+        phone: lead.phone,
+        avatarBg: lead.avatarBg,
+        avatarColor: lead.avatarColor,
+        intent: 'AI Voice Roleplay Practice',
+        product: lead.product,
+        value: `₹${lead.expectedValue.toLocaleString('en-IN')}`,
+        personaChallenge: lead.emiNote,
+      });
     }
   };
 

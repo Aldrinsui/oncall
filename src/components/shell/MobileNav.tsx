@@ -13,6 +13,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import type { View, PlanTab } from '../../types';
+import { LEADS } from '../../data/mockData';
 
 const MOBILE_NAV: { id: View; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -34,9 +35,7 @@ export default function MobileNav() {
     setActiveView,
     planTab,
     setPlanTab,
-    setCallState,
-    setCallingLead,
-    showToast,
+    startCall,
   } = useApp();
   const [mobilePlanSheetOpen, setMobilePlanSheetOpen] = useState(false);
 
@@ -67,9 +66,19 @@ export default function MobileNav() {
     setMobilePlanSheetOpen(false);
 
     if (tab === 'practise') {
-      setCallingLead('l1');
-      setCallState('ringing');
-      showToast('Initiating AI Practise Call simulation...');
+      const lead = LEADS[0];
+      startCall({
+        id: lead.id,
+        name: `${lead.name} (AI Customer Roleplay)`,
+        initials: lead.initials,
+        phone: lead.phone,
+        avatarBg: lead.avatarBg,
+        avatarColor: lead.avatarColor,
+        intent: 'AI Voice Roleplay Practice',
+        product: lead.product,
+        value: `₹${lead.expectedValue.toLocaleString('en-IN')}`,
+        personaChallenge: lead.emiNote,
+      });
     }
   };
 

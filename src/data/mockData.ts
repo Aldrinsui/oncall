@@ -119,8 +119,24 @@ export const LEADS: Lead[] = [
 // ─── Live Queue ─────────────────────────────────────────────────
 
 export const CALL_QUEUE: QueuedCaller[] = [
-  { name: 'Priya Iyer', wait: '4m 20s', waitLevel: 'hi', intent: 'Likely billing dispute — flagged before' },
-  { name: 'Suresh Nair', wait: '1m 50s', waitLevel: 'mid', intent: 'Plan upgrade enquiry' },
+  {
+    id: 'q1',
+    name: 'Priya Iyer',
+    initials: 'PI',
+    phone: '+91 98450 67890',
+    wait: '4m 20s',
+    waitLevel: 'hi',
+    intent: 'Likely billing dispute — flagged before',
+  },
+  {
+    id: 'q2',
+    name: 'Suresh Nair',
+    initials: 'SN',
+    phone: '+91 97654 32100',
+    wait: '1m 50s',
+    waitLevel: 'mid',
+    intent: 'Plan upgrade enquiry',
+  },
 ];
 
 // ─── Recent Calls ───────────────────────────────────────────────

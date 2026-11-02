@@ -64,12 +64,21 @@ export default function TasksList() {
         {tasks.map((task) => (
           <div
             key={task.id}
+            role="button"
+            tabIndex={0}
             onClick={() => handleTaskClick(task)}
-            className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer group ${
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleTaskClick(task);
+              }
+            }}
+            className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer group focus:outline-hidden focus:ring-2 focus:ring-og-green ${
               task.done
                 ? 'bg-og-gray/30 border-og-gray-border opacity-70'
                 : 'bg-white border-og-gray-border hover:border-og-green/40 hover:shadow-xs'
             }`}
+            aria-label={`Task: ${task.label}. Status: ${task.done ? 'Done' : 'Pending'}. Press Enter to open action.`}
           >
             <div className="flex items-center gap-3 min-w-0">
               <button

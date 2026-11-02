@@ -18,15 +18,24 @@ export default function Planner() {
   const {
     planTab,
     setPlanTab,
-    setCallingLead,
-    setCallState,
+    startCall,
     showToast,
   } = useApp();
 
   const handleStartPractise = (leadId: string, leadName: string) => {
-    setCallingLead(leadId);
-    setCallState('ringing');
-    showToast(`Starting AI simulated practise call with ${leadName}...`);
+    const lead = LEADS.find((l) => l.id === leadId) || LEADS[0];
+    startCall({
+      id: lead.id,
+      name: `${lead.name} (AI Customer Roleplay)`,
+      initials: lead.initials,
+      phone: lead.phone,
+      avatarBg: lead.avatarBg,
+      avatarColor: lead.avatarColor,
+      intent: `Practise Scenario: ${lead.product}`,
+      product: lead.product,
+      value: `₹${lead.expectedValue.toLocaleString('en-IN')}`,
+      personaChallenge: lead.emiNote,
+    });
   };
 
   const tabs: { id: PlanTab; label: string; count?: number; icon: typeof PhoneOutgoing; isAi?: boolean }[] = [

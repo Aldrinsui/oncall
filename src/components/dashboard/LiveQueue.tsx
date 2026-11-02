@@ -1,16 +1,23 @@
 import { useApp } from '../../context/AppContext';
-import { PhoneCall, AlertCircle, Clock, UserCheck } from 'lucide-react';
+import { PhoneCall, AlertCircle, Clock } from 'lucide-react';
 import { CALL_QUEUE } from '../../data/mockData';
+import type { QueuedCaller } from '../../types';
 
 export default function LiveQueue() {
-  const { setActiveView, setPlanTab, setCallState, setCallingLead, showToast } = useApp();
+  const { startCall } = useApp();
 
-  const handleCallQueueItem = (name: string) => {
-    setActiveView('plan');
-    setPlanTab('incoming');
-    setCallState('ringing');
-    setCallingLead('l1'); // Mukunda / Priya queue simulation
-    showToast(`Connecting to ${name} in Live Queue...`);
+  const handleCallQueueItem = (caller: QueuedCaller) => {
+    // Pass the actual caller identity, not an unrelated lead ID (P1 fix)
+    startCall({
+      id: caller.id,
+      name: caller.name,
+      initials: caller.initials,
+      phone: caller.phone,
+      avatarBg: caller.waitLevel === 'hi' ? '#fdecec' : '#fff3d6',
+      avatarColor: caller.waitLevel === 'hi' ? '#c94040' : '#854f0b',
+      intent: caller.intent,
+      personaChallenge: `Customer has been waiting ${caller.wait} in queue. Address inquiry: "${caller.intent}" with empathy.`,
+    });
   };
 
   return (
@@ -29,7 +36,7 @@ export default function LiveQueue() {
       <div className="space-y-2.5">
         {CALL_QUEUE.map((caller) => (
           <div
-            key={caller.name}
+            key={caller.id}
             className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border border-og-gray-border bg-og-gray/40 hover:bg-og-gray transition-colors gap-3"
           >
             <div className="flex items-start gap-3">
@@ -40,7 +47,7 @@ export default function LiveQueue() {
                     : 'bg-amber-100 text-og-amber border border-amber-200'
                 }`}
               >
-                {caller.name.split(' ').map((n) => n[0]).join('')}
+                {caller.initials}
               </div>
 
               <div>
@@ -57,11 +64,12 @@ export default function LiveQueue() {
                   </span>
                 </div>
                 <p className="text-xs text-og-gray-text mt-0.5">{caller.intent}</p>
+                <div className="text-[11px] text-gray-500 mt-0.5">{caller.phone}</div>
               </div>
             </div>
 
             <button
-              onClick={() => handleCallQueueItem(caller.name)}
+              onClick={() => handleCallQueueItem(caller)}
               className="px-4 py-2 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs flex-shrink-0"
               aria-label={`Call ${caller.name} now`}
             >

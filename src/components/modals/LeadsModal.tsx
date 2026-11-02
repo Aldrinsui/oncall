@@ -23,10 +23,7 @@ export default function LeadsModal() {
     setLeadsModalOpen,
     leadsModalPage,
     setLeadsModalPage,
-    setActiveView,
-    setPlanTab,
-    setCallState,
-    setCallingLead,
+    startCall,
     showToast,
   } = useApp();
 
@@ -63,11 +60,18 @@ export default function LeadsModal() {
 
   const handleStartCall = () => {
     setLeadsModalOpen(false);
-    setCallingLead(currentLead.id);
-    setActiveView('plan');
-    setPlanTab('outgoing');
-    setCallState('ringing');
-    showToast(`Calling ${currentLead.name}...`);
+    startCall({
+      id: currentLead.id,
+      name: currentLead.name,
+      initials: currentLead.initials,
+      phone: currentLead.phone,
+      avatarBg: currentLead.avatarBg,
+      avatarColor: currentLead.avatarColor,
+      intent: currentLead.interest,
+      product: currentLead.product,
+      value: `₹${currentLead.expectedValue.toLocaleString('en-IN')}`,
+      personaChallenge: currentLead.emiNote,
+    });
   };
 
   return (
@@ -260,7 +264,7 @@ export default function LeadsModal() {
           <div className="p-4 border-t border-og-gray-border bg-og-gray flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <button
-                onClick={() => showToast(`Quotation shared via WhatsApp to ${currentLead.name}`)}
+                onClick={() => showToast(`[Demo Simulation] Prepared quote for ${currentLead.product}`)}
                 className="p-2 bg-white hover:bg-gray-100 text-[#1c1c1e] border border-og-gray-border rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 title="Share quotation"
               >
@@ -268,7 +272,7 @@ export default function LeadsModal() {
                 <span className="hidden sm:inline">Quote</span>
               </button>
               <button
-                onClick={() => showToast(`WhatsApp thread opened with ${currentLead.name}`)}
+                onClick={() => showToast(`[Demo Simulation] Generated WhatsApp chat link for ${currentLead.name}`)}
                 className="p-2 bg-white hover:bg-gray-100 text-[#1c1c1e] border border-og-gray-border rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
                 title="Send WhatsApp"
               >

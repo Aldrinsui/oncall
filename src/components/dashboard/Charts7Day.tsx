@@ -112,19 +112,23 @@ export default function Charts7Day() {
         </ResponsiveContainer>
       </div>
 
-      {/* Chart Footer Highlights */}
+      {/* Chart Footer Highlights — Dynamically computed from dataset (P2 fix) */}
       <div className="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-og-gray-border text-center text-xs">
         <div>
           <span className="text-[10px] text-og-gray-text block">Weekly Calls</span>
-          <span className="font-extrabold text-[#1c1c1e]">134 calls</span>
+          <span className="font-extrabold text-[#1c1c1e]">{CHART_DATA.reduce((acc, d) => acc + d.calls, 0)} calls</span>
         </div>
         <div>
           <span className="text-[10px] text-og-gray-text block">Avg Daily Talk</span>
-          <span className="font-extrabold text-og-green">72.5 min</span>
+          <span className="font-extrabold text-og-green">
+            {(CHART_DATA.reduce((acc, d) => acc + d.talkTime, 0) / CHART_DATA.length).toFixed(1)} min
+          </span>
         </div>
         <div>
           <span className="text-[10px] text-og-gray-text block">Total Conversions</span>
-          <span className="font-extrabold text-amber-700">37 closed</span>
+          <span className="font-extrabold text-amber-700">
+            {CHART_DATA.reduce((acc, d) => acc + d.conversions, 0)} closed
+          </span>
         </div>
       </div>
     </div>

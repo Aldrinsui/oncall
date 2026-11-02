@@ -47,8 +47,17 @@ export default function RecentCalls() {
         {RECENT_CALLS.map((call) => (
           <div
             key={call.id}
+            role="button"
+            tabIndex={0}
             onClick={() => setSelectedCall(call)}
-            className="p-3.5 rounded-xl border border-og-gray-border bg-white hover:border-og-green/40 hover:shadow-xs transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setSelectedCall(call);
+              }
+            }}
+            className="p-3.5 rounded-xl border border-og-gray-border bg-white hover:border-og-green/40 hover:shadow-xs transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group focus:outline-hidden focus:ring-2 focus:ring-og-green"
+            aria-label={`Call record: ${call.name}, outcome: ${call.outcome}. Press Enter to view quality review.`}
           >
             {/* Left: Direction + Caller + Time */}
             <div className="flex items-center gap-3.5 min-w-0">

@@ -29,10 +29,10 @@ export default function OgScoreModal() {
   if (!ogScoreModalOpen) return null;
 
   const scorePillars = [
-    { title: 'SOP Script Adherence', score: 88, weight: '30%', trend: '+4 pts', desc: 'Opening greeting, discovery questions & warranty pitch' },
-    { title: 'Objection Handling', score: 79, weight: '25%', trend: '+8 pts', desc: 'EMI plan justification & competitor price defense' },
-    { title: 'Lead Conversion Rate', score: 84, weight: '25%', trend: '+2 pts', desc: 'Walk-out recovery and quotation follow-ups closed' },
-    { title: 'Customer Sentiment Score', score: 91, weight: '20%', trend: '+3 pts', desc: 'AI speech tone analysis and positive caller feedback' },
+    { title: 'SOP Script Adherence', score: 78, weight: '30%', numericWeight: 0.30, trend: '+4 pts', desc: 'Opening greeting, discovery questions & warranty pitch' },
+    { title: 'Objection Handling', score: 72, weight: '25%', numericWeight: 0.25, trend: '+8 pts', desc: 'EMI plan justification & competitor price defense' },
+    { title: 'Lead Conversion Rate', score: 74, weight: '25%', numericWeight: 0.25, trend: '+2 pts', desc: 'Walk-out recovery and quotation follow-ups closed' },
+    { title: 'Customer Sentiment Score', score: 81, weight: '20%', numericWeight: 0.20, trend: '+3 pts', desc: 'AI speech tone analysis and positive caller feedback' },
   ];
 
   return (

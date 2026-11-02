@@ -72,7 +72,7 @@ export default function EarningsCard() {
       </div>
 
       <button
-        onClick={() => showToast('Full commission & payout ledger downloaded')}
+        onClick={() => showToast('[Demo Simulation] Shift commission ledger: Base ₹3,400 + Bonuses ₹1,800 = ₹5,200')}
         className="mt-3.5 w-full py-2 bg-og-gray hover:bg-gray-200 text-og-forest rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors"
       >
         <span>View Incentive Breakdown</span>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   PhoneCall,
@@ -8,42 +8,55 @@ import {
   ChevronRight,
   FileText,
   Sparkles,
-  Shield,
   CreditCard,
-  TrendingUp,
 } from 'lucide-react';
 import { LEADS } from '../../data/mockData';
+import type { Lead } from '../../types';
 
 export default function CallsToMake() {
   const {
-    setCallingLead,
-    setCallState,
+    startCall,
     setLeadsModalOpen,
     setLeadsModalPage,
-    showToast,
   } = useApp();
 
-  const [expandedRow, setExpandedRow] = useState<string | null>(LEADS[0].id);
+  // Sort leads strictly by attractivenessScore descending (P1 fix)
+  const sortedLeads = useMemo(() => {
+    return [...LEADS].sort((a, b) => b.attractivenessScore - a.attractivenessScore);
+  }, []);
+
+  const [expandedRow, setExpandedRow] = useState<string | null>(sortedLeads[0].id);
   const [page, setPage] = useState(0);
 
   const pageSize = 2; // 2 leads per page -> 3 pages for 6 leads
-  const totalPages = Math.ceil(LEADS.length / pageSize);
-  const displayedLeads = LEADS.slice(page * pageSize, (page + 1) * pageSize);
+  const totalPages = Math.ceil(sortedLeads.length / pageSize);
+  const displayedLeads = sortedLeads.slice(page * pageSize, (page + 1) * pageSize);
 
   const toggleExpand = (id: string) => {
     setExpandedRow(expandedRow === id ? null : id);
   };
 
-  const handleStartCall = (leadId: string, leadName: string, e: React.MouseEvent) => {
+  const handleStartCall = (lead: Lead, e: React.MouseEvent) => {
     e.stopPropagation();
-    setCallingLead(leadId);
-    setCallState('ringing');
-    showToast(`Calling ${leadName}...`);
+    startCall({
+      id: lead.id,
+      name: lead.name,
+      initials: lead.initials,
+      phone: lead.phone,
+      avatarBg: lead.avatarBg,
+      avatarColor: lead.avatarColor,
+      intent: lead.interest,
+      product: lead.product,
+      value: `₹${lead.expectedValue.toLocaleString('en-IN')}`,
+      personaChallenge: lead.emiNote,
+    });
   };
 
-  const handleOpenDossier = (leadIndex: number, e: React.MouseEvent) => {
+  const handleOpenDossier = (leadId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setLeadsModalPage(leadIndex);
+    // Resolve lead record by stable ID, not displayed pagination index
+    const indexInMasterList = LEADS.findIndex((l) => l.id === leadId);
+    setLeadsModalPage(indexInMasterList !== -1 ? indexInMasterList : 0);
     setLeadsModalOpen(true);
   };
 
@@ -54,7 +67,7 @@ export default function CallsToMake() {
         <div>
           <h3 className="text-sm font-bold text-[#1c1c1e]">Prioritized Outgoing Queue</h3>
           <p className="text-xs text-og-gray-text">
-            Ranked by AI Propensity Score & Expected Close Value
+            Ranked strictly by AI Propensity Score & Attractiveness in descending order
           </p>
         </div>
 
@@ -87,7 +100,7 @@ export default function CallsToMake() {
       {/* Leads Rows */}
       <div className="space-y-3">
         {displayedLeads.map((lead, idx) => {
-          const globalIdx = page * pageSize + idx;
+          const globalRank = page * pageSize + idx + 1;
           const isExpanded = expandedRow === lead.id;
 
           return (
@@ -99,14 +112,24 @@ export default function CallsToMake() {
                   : 'bg-white border-og-gray-border hover:border-gray-300'
               }`}
             >
-              {/* Row Header */}
+              {/* Row Header — keyboard accessible */}
               <div
+                role="button"
+                tabIndex={0}
                 onClick={() => toggleExpand(lead.id)}
-                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleExpand(lead.id);
+                  }
+                }}
+                className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none focus:outline-hidden focus:bg-og-gray/30"
+                aria-expanded={isExpanded}
+                aria-label={`Lead rank #${globalRank}: ${lead.name}, Score: ${lead.attractivenessScore}. Press Enter to toggle details.`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   {/* Rank & Avatar */}
-                  <span className="text-xs font-black text-og-gray-text w-4">#{globalIdx + 1}</span>
+                  <span className="text-xs font-black text-og-forest w-5">#{globalRank}</span>
                   <div
                     className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shadow-xs flex-shrink-0"
                     style={{ backgroundColor: lead.avatarBg, color: lead.avatarColor }}
@@ -122,6 +145,9 @@ export default function CallsToMake() {
                         style={{ backgroundColor: lead.badgeBg, color: lead.badgeColor }}
                       >
                         {lead.badge}
+                      </span>
+                      <span className="text-[10px] font-black text-og-green bg-emerald-50 px-1.5 py-0.5 rounded">
+                        Score: {lead.attractivenessScore}
                       </span>
                     </div>
                     <div className="text-xs text-og-gray-text mt-0.5 truncate">
@@ -144,7 +170,7 @@ export default function CallsToMake() {
                   </div>
 
                   <button
-                    onClick={(e) => handleStartCall(lead.id, lead.name, e)}
+                    onClick={(e) => handleStartCall(lead, e)}
                     className="px-3.5 py-1.5 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
                     aria-label={`Call ${lead.name}`}
                   >
@@ -152,16 +178,9 @@ export default function CallsToMake() {
                     <span>Call</span>
                   </button>
 
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleExpand(lead.id);
-                    }}
-                    className="p-1 rounded-md text-og-gray-text hover:text-[#1c1c1e] hover:bg-og-gray"
-                    aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
-                  >
+                  <span className="p-1 rounded-md text-og-gray-text hover:text-[#1c1c1e] hover:bg-og-gray">
                     {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </button>
+                  </span>
                 </div>
               </div>
 
@@ -205,7 +224,7 @@ export default function CallsToMake() {
                   {/* Bottom Actions */}
                   <div className="flex items-center justify-between pt-1">
                     <button
-                      onClick={(e) => handleOpenDossier(globalIdx, e)}
+                      onClick={(e) => handleOpenDossier(lead.id, e)}
                       className="text-xs font-bold text-og-green hover:text-og-forest flex items-center gap-1"
                     >
                       <FileText size={14} />
@@ -213,7 +232,7 @@ export default function CallsToMake() {
                     </button>
 
                     <button
-                      onClick={(e) => handleStartCall(lead.id, lead.name, e)}
+                      onClick={(e) => handleStartCall(lead, e)}
                       className="px-4 py-2 bg-og-forest hover:bg-og-forest-deep text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm"
                     >
                       <PhoneCall size={14} />
@@ -229,7 +248,7 @@ export default function CallsToMake() {
 
       {/* Bottom Paging Info */}
       <div className="flex items-center justify-between pt-3 text-xs text-og-gray-text">
-        <span>Showing {displayedLeads.length} of {LEADS.length} scheduled leads</span>
+        <span>Showing {displayedLeads.length} of {sortedLeads.length} ranked leads</span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setPage(Math.max(0, page - 1))}

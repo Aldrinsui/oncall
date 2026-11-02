@@ -1,14 +1,24 @@
 import { useApp } from '../../context/AppContext';
-import { PhoneOutgoing, Clock, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { PhoneOutgoing, Clock, AlertTriangle } from 'lucide-react';
 import { INCOMING_CALLS } from '../../data/mockData';
+import type { IncomingCall } from '../../types';
 
 export default function IncomingCalls() {
-  const { setCallingLead, setCallState, showToast } = useApp();
+  const { startCall } = useApp();
 
-  const handleCallBack = (id: string, name: string) => {
-    setCallingLead(id);
-    setCallState('ringing');
-    showToast(`Calling back ${name}...`);
+  const handleCallBack = (call: IncomingCall) => {
+    // Pass the actual incoming caller identity to the unified calling engine
+    startCall({
+      id: call.id,
+      name: call.name,
+      initials: call.initials,
+      phone: call.phone,
+      avatarBg: '#fdecec',
+      avatarColor: '#c94040',
+      intent: call.intent,
+      value: call.valueAtStake,
+      personaChallenge: `Customer called regarding "${call.intent}". Value at stake: ${call.valueAtStake}. Explain resolution quickly.`,
+    });
   };
 
   const totalValueAtStake = '₹77,390';
@@ -76,7 +86,7 @@ export default function IncomingCalls() {
               </div>
 
               <button
-                onClick={() => handleCallBack(call.id, call.name)}
+                onClick={() => handleCallBack(call)}
                 className="px-4 py-2 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
                 aria-label={`Call back ${call.name}`}
               >

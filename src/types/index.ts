@@ -41,8 +41,25 @@ export interface BuyingSignal {
 export type CallDirection = 'inbound' | 'outbound' | 'missed';
 export type CallStatus = 'idle' | 'ringing' | 'active' | 'wrapup' | 'review';
 
-export interface QueuedCaller {
+export interface CallTarget {
+  id: string;
   name: string;
+  initials: string;
+  phone: string;
+  avatarBg: string;
+  avatarColor: string;
+  intent: string;
+  product?: string;
+  value?: string;
+  personaChallenge?: string;
+  scriptContext?: string;
+}
+
+export interface QueuedCaller {
+  id: string;
+  name: string;
+  initials: string;
+  phone: string;
   wait: string;
   waitLevel: 'hi' | 'mid' | 'lo';
   intent: string;
@@ -122,6 +139,8 @@ export interface ChatMessage {
   time: string;
   isAgent?: boolean;
 }
+
+export type PulseMessage = ChatMessage;
 
 export interface PulseThread {
   title: string;

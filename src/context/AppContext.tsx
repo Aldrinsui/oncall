@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useRef, type ReactNode } from 'react';
-import type { View, PlanTab, PulseView } from '../types';
+import type { View, PlanTab, PulseView, CallTarget } from '../types';
 
 interface AppContextType {
   activeView: View;
@@ -33,6 +33,10 @@ interface AppContextType {
   setCallState: (s: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review') => void;
   callingLead: string | null;
   setCallingLead: (id: string | null) => void;
+  activeCallTarget: CallTarget | null;
+  setActiveCallTarget: (target: CallTarget | null) => void;
+  startCall: (target: CallTarget) => void;
+  endCall: () => void;
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
@@ -55,6 +59,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
   const [callingLead, setCallingLead] = useState<string | null>(null);
+  const [activeCallTarget, setActiveCallTarget] = useState<CallTarget | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [ogScoreModalOpen, setOgScoreModalOpen] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,6 +73,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setToastMessage(null);
       toastTimerRef.current = null;
     }, 3000);
+  };
+
+  const startCall = (target: CallTarget) => {
+    setActiveCallTarget(target);
+    setCallingLead(target.id);
+    setActiveView('plan');
+    setCallState('ringing');
+    showToast(`Calling ${target.name} (${target.phone})...`);
+  };
+
+  const endCall = () => {
+    setCallState('wrapup');
   };
 
   return (
@@ -87,6 +104,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sidebarCollapsed, setSidebarCollapsed,
       callState, setCallState,
       callingLead, setCallingLead,
+      activeCallTarget, setActiveCallTarget,
+      startCall, endCall,
       toastMessage, showToast,
     }}>
       {children}
