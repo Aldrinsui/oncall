@@ -48,6 +48,13 @@ export interface QueuedCaller {
   intent: string;
 }
 
+export interface SopReviewItem {
+  criterion: string;
+  passed: boolean;
+  score: number;
+  evidence: string;
+}
+
 export interface RecentCall {
   id: string;
   name: string;
@@ -58,6 +65,8 @@ export interface RecentCall {
   outcome: string;
   outcomeColor: string;
   value?: string;
+  sopScore?: number;
+  reviewItems?: SopReviewItem[];
 }
 
 export interface IncomingCall {

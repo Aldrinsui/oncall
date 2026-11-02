@@ -8,6 +8,7 @@ import AvatarModal from './components/modals/AvatarModal';
 import OgScoreModal from './components/modals/OgScoreModal';
 import LeadsModal from './components/modals/LeadsModal';
 import Dashboard from './components/dashboard/Dashboard';
+import Planner from './components/plan/Planner';
 
 function AppContent() {
   const {
@@ -32,10 +33,10 @@ function AppContent() {
         <Topbar />
 
         <main className="flex-1 p-3.5 sm:p-5 md:p-6 max-w-7xl w-full mx-auto">
-          {activeView === 'dashboard' ? (
-            <Dashboard />
-          ) : (
-            /* Views to be completed in upcoming phases */
+          {activeView === 'dashboard' && <Dashboard />}
+          {activeView === 'plan' && <Planner />}
+          {activeView !== 'dashboard' && activeView !== 'plan' && (
+            /* Views to be completed in upcoming phases (Calendar, Pulse) */
             <div className="bg-white rounded-card shadow-sm border border-og-gray-border p-6 md:p-8 animate-fade-in">
               <div className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-og-gray-border gap-4">
                 <div>
@@ -43,17 +44,7 @@ function AppContent() {
                     Navigation Destination
                   </span>
                   <h1 className="text-2xl font-bold text-[#1c1c1e] mt-1 capitalize">
-                    {activeView === 'plan'
-                      ? `Plan · ${
-                          planTab === 'outgoing'
-                            ? 'Calls to make'
-                            : planTab === 'incoming'
-                            ? 'Incoming'
-                            : planTab === 'recent'
-                            ? 'Recent'
-                            : 'Practise a call'
-                        }`
-                      : activeView}
+                    {activeView}
                   </h1>
                   <p className="text-xs text-og-gray-text mt-1">
                     This section will be delivered in the upcoming phases.
@@ -87,10 +78,10 @@ function AppContent() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-[#0f6e56]">
-                      Phase 3: Dashboard is fully implemented and live!
+                      Phase 3 & Phase 4 Delivered!
                     </h3>
                     <p className="text-xs text-[#0f6e56]/80 mt-0.5">
-                      Switch back to <strong>Dashboard</strong> to review the KPI cards, progress bar, live queue, earnings, interactive tasks, and 7-day performance charts.
+                      Switch to <strong>Plan</strong> to review <strong>Calls to make</strong> (ranked leads with pagination), <strong>Incoming</strong> (missed calls with value at stake & callback buttons), <strong>Recent</strong> (call history with interactive SOP reviews), and <strong>Practise a call</strong>.
                     </p>
                   </div>
                 </div>
