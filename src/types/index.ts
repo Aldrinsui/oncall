@@ -63,6 +63,8 @@ export interface QueuedCaller {
   wait: string;
   waitLevel: 'hi' | 'mid' | 'lo';
   intent: string;
+  status?: 'waiting' | 'in_call' | 'handled';
+  createdAt?: number;
 }
 
 export interface SopReviewItem {
@@ -85,6 +87,7 @@ export interface RecentCall {
   sopScore?: number;
   reviewItems?: SopReviewItem[];
   consent?: ConsentRecord;
+  notes?: string;
 }
 
 // ─── Persona Customization ──────────────────────────────────────

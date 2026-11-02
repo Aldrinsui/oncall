@@ -4,10 +4,11 @@ import { CALL_QUEUE } from '../../data/mockData';
 import type { QueuedCaller } from '../../types';
 
 export default function LiveQueue() {
-  const { startCall } = useApp();
+  const { startCall, callQueue, acceptQueueCaller } = useApp();
 
   const handleCallQueueItem = (caller: QueuedCaller) => {
-    // Pass the actual caller identity, not an unrelated lead ID (P1 fix)
+    if (caller.status === 'in_call') return;
+    acceptQueueCaller(caller.id);
     startCall({
       id: caller.id,
       name: caller.name,
@@ -20,6 +21,8 @@ export default function LiveQueue() {
     });
   };
 
+  const waitingCount = callQueue.filter((c) => c.status !== 'in_call').length;
+
   return (
     <div className="bg-white rounded-card border border-og-gray-border p-4 sm:p-5 shadow-xs">
       <div className="flex items-center justify-between pb-3 border-b border-og-gray-border mb-3.5">
@@ -27,14 +30,14 @@ export default function LiveQueue() {
           <span className="w-2.5 h-2.5 rounded-full bg-og-red animate-pulse-dot" />
           <h3 className="text-sm font-bold text-[#1c1c1e]">Who is Waiting Now</h3>
           <span className="text-xs bg-og-red-bg text-og-red font-bold px-2 py-0.5 rounded-full">
-            {CALL_QUEUE.length} in queue
+            {waitingCount} in queue
           </span>
         </div>
         <span className="text-xs text-og-gray-text hidden sm:inline">Live Inbound Routing</span>
       </div>
 
       <div className="space-y-2.5">
-        {CALL_QUEUE.map((caller) => (
+        {callQueue.map((caller) => (
           <div
             key={caller.id}
             className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 rounded-xl border border-og-gray-border bg-og-gray/40 hover:bg-og-gray transition-colors gap-3"
@@ -70,11 +73,16 @@ export default function LiveQueue() {
 
             <button
               onClick={() => handleCallQueueItem(caller)}
-              className="px-4 py-2 bg-og-green hover:bg-og-forest text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs flex-shrink-0"
+              disabled={caller.status === 'in_call'}
+              className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs flex-shrink-0 ${
+                caller.status === 'in_call'
+                  ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  : 'bg-og-green hover:bg-og-forest text-white'
+              }`}
               aria-label={`Call ${caller.name} now`}
             >
               <PhoneCall size={14} />
-              <span>Call Now</span>
+              <span>{caller.status === 'in_call' ? 'Connected' : 'Call Now'}</span>
             </button>
           </div>
         ))}

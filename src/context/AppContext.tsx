@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useRef, useMemo, type ReactNode } from 'react';
 import type {
   View,
   PlanTab,
@@ -8,8 +8,24 @@ import type {
   SellingPersona,
   RecordingConsentState,
   ConsentRecord,
+  DailyTask,
+  QueuedCaller,
+  ChartDataPoint,
 } from '../types';
-import { RECENT_CALLS, SELLING_PERSONAS } from '../data/mockData';
+import { RECENT_CALLS, SELLING_PERSONAS, DAILY_TASKS, CALL_QUEUE, CHART_DATA } from '../data/mockData';
+import {
+  calculateShiftProgress,
+  calculateShiftPace,
+  calculateAverageTalkTime,
+  calculateConversionMetrics,
+  calculateEarnings,
+  aggregateWeeklyChartData,
+  isQualifyingConversion,
+  type ShiftProgress,
+  type ShiftPace,
+  type ConversionMetrics,
+  type EarningsBreakdown,
+} from '../services/dashboardService';
 
 interface AppContextType {
   activeView: View;
@@ -69,6 +85,17 @@ interface AppContextType {
     guardianPhone?: string
   ) => void;
   resetConsent: () => void;
+  // Dashboard Metrics & Central Domain Store
+  shiftProgress: ShiftProgress;
+  shiftPace: ShiftPace;
+  avgTalkTime: string;
+  conversions: ConversionMetrics;
+  earnings: EarningsBreakdown;
+  weeklyChartData: ChartDataPoint[];
+  dailyTasks: DailyTask[];
+  toggleTask: (taskId: string) => void;
+  callQueue: QueuedCaller[];
+  acceptQueueCaller: (callerId: string) => void;
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
@@ -186,7 +213,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
   const [callingLead, setCallingLead] = useState<string | null>(null);
   const [activeCallTarget, setActiveCallTarget] = useState<CallTarget | null>(null);
-  const [recentCalls, setRecentCalls] = useState<RecentCall[]>(RECENT_CALLS);
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>(() => {
+    try {
+      const saved = localStorage.getItem('onground_recent_calls');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to parse recent calls from localStorage', e);
+    }
+    return RECENT_CALLS;
+  });
+
+  const [dailyTasks, setDailyTasks] = useState<DailyTask[]>(() => {
+    try {
+      const saved = localStorage.getItem('onground_daily_tasks');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to parse daily tasks from localStorage', e);
+    }
+    return DAILY_TASKS;
+  });
+
+  const toggleTask = (taskId: string) => {
+    setDailyTasks((prev) => {
+      const next = prev.map((t) => (t.id === taskId ? { ...t, done: !t.done } : t));
+      try {
+        localStorage.setItem('onground_daily_tasks', JSON.stringify(next));
+      } catch (e) {
+        console.warn('Failed to persist daily tasks to localStorage', e);
+      }
+      return next;
+    });
+  };
+
+  const [callQueue, setCallQueue] = useState<QueuedCaller[]>(() => {
+    try {
+      const saved = localStorage.getItem('onground_call_queue');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.warn('Failed to parse call queue from localStorage', e);
+    }
+    return CALL_QUEUE.map((c) => ({ ...c, status: 'waiting' as const }));
+  });
+
+  const acceptQueueCaller = (callerId: string) => {
+    setCallQueue((prev) => {
+      const next = prev.map((c) => (c.id === callerId ? { ...c, status: 'in_call' as const } : c));
+      try {
+        localStorage.setItem('onground_call_queue', JSON.stringify(next));
+      } catch (e) {
+        console.warn('Failed to persist call queue to localStorage', e);
+      }
+      return next;
+    });
+  };
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [ogScoreModalOpen, setOgScoreModalOpen] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -221,8 +310,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...call,
       consent: call.consent || currentConsent || undefined,
     };
-    setRecentCalls((prev) => [callWithConsent, ...prev]);
+
+    setRecentCalls((prev) => {
+      // Deduplicate: If call with this ID already exists, do not double-increment
+      if (prev.some((c) => c.id === callWithConsent.id)) {
+        return prev;
+      }
+      const updated = [callWithConsent, ...prev];
+      try {
+        localStorage.setItem('onground_recent_calls', JSON.stringify(updated));
+      } catch (e) {
+        console.warn('Failed to persist recent calls to localStorage', e);
+      }
+      return updated;
+    });
   };
+
+  // Static initial IDs to distinguish newly completed calls in this environment
+  const initialCallIds = useMemo(() => new Set(RECENT_CALLS.map((c) => c.id)), []);
+
+  // Filter newly completed calls (excluding initial demo rows and missed calls)
+  const newCalls = useMemo(() => {
+    return recentCalls.filter((c) => !initialCallIds.has(c.id) && c.outcome !== 'Missed');
+  }, [recentCalls, initialCallIds]);
+
+  // Total completed calls: Baseline 14 + new completed calls
+  const callsCompleted = 14 + newCalls.length;
+  const callsTotal = 18;
+
+  const shiftProgress = useMemo(() => {
+    return calculateShiftProgress(callsCompleted, callsTotal);
+  }, [callsCompleted, callsTotal]);
+
+  const shiftPace = useMemo(() => {
+    return calculateShiftPace(callsCompleted, callsTotal);
+  }, [callsCompleted, callsTotal]);
+
+  const avgTalkTime = useMemo(() => {
+    return calculateAverageTalkTime(newCalls, 14);
+  }, [newCalls]);
+
+  const conversions = useMemo(() => {
+    return calculateConversionMetrics(newCalls, 11, 14);
+  }, [newCalls]);
+
+  const newConversionsCount = useMemo(() => {
+    return newCalls.filter((c) => isQualifyingConversion(c.outcome)).length;
+  }, [newCalls]);
+
+  const earnings = useMemo(() => {
+    return calculateEarnings(newConversionsCount);
+  }, [newConversionsCount]);
+
+  const weeklyChartData = useMemo(() => {
+    return aggregateWeeklyChartData(CHART_DATA, newCalls);
+  }, [newCalls]);
 
   return (
     <AppContext.Provider value={{
@@ -245,6 +387,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeCallTarget, setActiveCallTarget,
       startCall, endCall,
       recentCalls, addRecentCall,
+      shiftProgress, shiftPace, avgTalkTime, conversions, earnings, weeklyChartData,
+      dailyTasks, toggleTask,
+      callQueue, acceptQueueCaller,
       recordingConsent, setRecordingConsent,
       currentConsent, grantConsent, declineConsent, resetConsent,
       toastMessage, showToast,

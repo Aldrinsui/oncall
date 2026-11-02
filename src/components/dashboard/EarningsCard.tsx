@@ -3,12 +3,7 @@ import { USER } from '../../data/mockData';
 import { useApp } from '../../context/AppContext';
 
 export default function EarningsCard() {
-  const { showToast } = useApp();
-
-  const baseEarnings = 3400;
-  const bonusEarnings = 1800;
-  const nextMilestone = 6000;
-  const milestoneProgress = Math.round((USER.earnings / nextMilestone) * 100);
+  const { showToast, earnings } = useApp();
 
   return (
     <div className="bg-white rounded-card border border-og-gray-border p-4 sm:p-5 shadow-xs flex flex-col justify-between">
@@ -32,11 +27,11 @@ export default function EarningsCard() {
           </span>
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-3xl font-black text-[#854f0b]">
-              ₹{USER.earnings.toLocaleString('en-IN')}
+              ₹{earnings.totalEarnings.toLocaleString('en-IN')}
             </span>
             <span className="text-xs font-bold text-og-green flex items-center gap-0.5">
               <TrendingUp size={13} />
-              +₹850 today
+              +₹{earnings.todayEarnings.toLocaleString('en-IN')} today
             </span>
           </div>
 
@@ -44,11 +39,11 @@ export default function EarningsCard() {
           <div className="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-amber-200/60 text-xs">
             <div>
               <div className="text-[10px] text-amber-800/80">Base Calls Incentive</div>
-              <div className="font-bold text-[#1c1c1e]">₹{baseEarnings.toLocaleString('en-IN')}</div>
+              <div className="font-bold text-[#1c1c1e]">₹{earnings.baseEarnings.toLocaleString('en-IN')}</div>
             </div>
             <div>
               <div className="text-[10px] text-amber-800/80">Conversion Bonuses</div>
-              <div className="font-bold text-[#1c1c1e]">₹{bonusEarnings.toLocaleString('en-IN')}</div>
+              <div className="font-bold text-[#1c1c1e]">₹{earnings.bonusEarnings.toLocaleString('en-IN')}</div>
             </div>
           </div>
         </div>
@@ -56,23 +51,27 @@ export default function EarningsCard() {
         {/* Next Tier Milestone */}
         <div className="p-3 rounded-xl border border-og-gray-border bg-og-gray/30 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-og-gray-text">Next Tier: ₹{nextMilestone.toLocaleString('en-IN')}</span>
-            <span className="font-bold text-og-forest">{milestoneProgress}%</span>
+            <span className="font-semibold text-og-gray-text">Next Tier: ₹{earnings.nextMilestone.toLocaleString('en-IN')}</span>
+            <span className="font-bold text-og-forest">{earnings.milestoneProgressPct}%</span>
           </div>
           <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
-              style={{ width: `${milestoneProgress}%` }}
+              style={{ width: `${earnings.milestoneProgressPct}%` }}
             />
           </div>
           <div className="text-[11px] text-og-gray-text">
-            Unlock additional ₹1,000 bonus at 20 conversions.
+            Unlock additional ₹1,000 bonus at 20 conversions ({earnings.conversionsTowardsMilestone}/20 achieved).
           </div>
         </div>
       </div>
 
       <button
-        onClick={() => showToast('[Demo Simulation] Shift commission ledger: Base ₹3,400 + Bonuses ₹1,800 = ₹5,200')}
+        onClick={() =>
+          showToast(
+            `[Shift Commission Ledger] Base ₹${earnings.baseEarnings.toLocaleString('en-IN')} + Bonuses ₹${earnings.bonusEarnings.toLocaleString('en-IN')} = Total ₹${earnings.totalEarnings.toLocaleString('en-IN')}`
+          )
+        }
         className="mt-3.5 w-full py-2 bg-og-gray hover:bg-gray-200 text-og-forest rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-colors"
       >
         <span>View Incentive Breakdown</span>

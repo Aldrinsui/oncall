@@ -13,14 +13,14 @@ export default function TasksList() {
     setActiveChannelId,
     setPlanTab,
     showToast,
+    dailyTasks,
+    toggleTask,
   } = useApp();
 
-  const [tasks, setTasks] = useState<DailyTask[]>(DAILY_TASKS);
-
-  const toggleTask = (id: string, e?: React.MouseEvent) => {
+  const handleToggleTask = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setTasks(tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
-    const task = tasks.find((t) => t.id === id);
+    const task = dailyTasks.find((t) => t.id === id);
+    toggleTask(id);
     if (task) {
       showToast(task.done ? `Marked "${task.label}" as pending` : `Completed: "${task.label}"`);
     }
@@ -44,7 +44,7 @@ export default function TasksList() {
     }
   };
 
-  const completedCount = tasks.filter((t) => t.done).length;
+  const completedCount = dailyTasks.filter((t) => t.done).length;
 
   return (
     <div className="bg-white rounded-card border border-og-gray-border p-4 sm:p-5 shadow-xs">
@@ -56,12 +56,12 @@ export default function TasksList() {
           <h3 className="text-sm font-bold text-[#1c1c1e]">My Shift Tasks</h3>
         </div>
         <span className="text-xs bg-purple-50 text-og-purple-mid font-bold px-2 py-0.5 rounded-full">
-          {completedCount}/{tasks.length} Done
+          {completedCount}/{dailyTasks.length} Done
         </span>
       </div>
 
       <div className="space-y-2">
-        {tasks.map((task) => (
+        {dailyTasks.map((task) => (
           <div
             key={task.id}
             className={`flex items-center justify-between p-3 rounded-xl border transition-all ${
@@ -73,7 +73,7 @@ export default function TasksList() {
             {/* 1. Independent Checkbox Button */}
             <button
               type="button"
-              onClick={() => toggleTask(task.id)}
+              onClick={(e) => handleToggleTask(task.id, e)}
               className="text-og-green hover:text-og-forest transition-colors p-1 mr-2.5 flex-shrink-0 rounded-md focus:outline-hidden focus:ring-2 focus:ring-og-green"
               aria-label={`Mark task "${task.label}" as ${task.done ? 'pending' : 'completed'}`}
             >

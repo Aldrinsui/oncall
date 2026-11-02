@@ -11,9 +11,10 @@ import {
   ComposedChart,
 } from 'recharts';
 import { BarChart3, TrendingUp, Phone, Clock } from 'lucide-react';
-import { CHART_DATA } from '../../data/mockData';
+import { useApp } from '../../context/AppContext';
 
 export default function Charts7Day() {
+  const { weeklyChartData } = useApp();
   const [activeMetric, setActiveMetric] = useState<'calls' | 'talkTime' | 'conversions'>('calls');
 
   const metricConfig = {
@@ -73,7 +74,7 @@ export default function Charts7Day() {
       {/* Chart Canvas */}
       <div className="w-full h-56 pt-2">
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={CHART_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <ComposedChart data={weeklyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f3" vertical={false} />
             <XAxis
               dataKey="day"
@@ -116,18 +117,18 @@ export default function Charts7Day() {
       <div className="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-og-gray-border text-center text-xs">
         <div>
           <span className="text-[10px] text-og-gray-text block">Weekly Calls</span>
-          <span className="font-extrabold text-[#1c1c1e]">{CHART_DATA.reduce((acc, d) => acc + d.calls, 0)} calls</span>
+          <span className="font-extrabold text-[#1c1c1e]">{weeklyChartData.reduce((acc, d) => acc + d.calls, 0)} calls</span>
         </div>
         <div>
           <span className="text-[10px] text-og-gray-text block">Avg Daily Talk</span>
           <span className="font-extrabold text-og-green">
-            {(CHART_DATA.reduce((acc, d) => acc + d.talkTime, 0) / CHART_DATA.length).toFixed(1)} min
+            {(weeklyChartData.reduce((acc, d) => acc + d.talkTime, 0) / weeklyChartData.length).toFixed(1)} min
           </span>
         </div>
         <div>
           <span className="text-[10px] text-og-gray-text block">Total Conversions</span>
           <span className="font-extrabold text-amber-700">
-            {CHART_DATA.reduce((acc, d) => acc + d.conversions, 0)} closed
+            {weeklyChartData.reduce((acc, d) => acc + d.conversions, 0)} closed
           </span>
         </div>
       </div>

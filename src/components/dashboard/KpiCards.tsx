@@ -3,9 +3,7 @@ import { Phone, Clock, TrendingUp, CheckCircle, Award } from 'lucide-react';
 import { USER } from '../../data/mockData';
 
 export default function KpiCards() {
-  const { setOgScoreModalOpen } = useApp();
-
-  const completedPct = Math.round((USER.callsCompleted / USER.callsTotal) * 100);
+  const { setOgScoreModalOpen, shiftProgress, shiftPace, avgTalkTime, conversions } = useApp();
 
   return (
     <div className="space-y-4">
@@ -44,12 +42,12 @@ export default function KpiCards() {
             </span>
           </div>
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-[#1c1c1e]">{USER.callsTotal}</span>
+            <span className="text-2xl font-black text-[#1c1c1e]">{shiftProgress.callsTotal}</span>
             <span className="text-xs font-bold text-og-green">Calls Target</span>
           </div>
           <div className="flex items-center justify-between text-[11px] text-og-gray-text mt-3 pt-2.5 border-t border-og-gray-border">
-            <span>Avg Talk: <strong>4m 22s</strong></span>
-            <span className="text-og-green font-semibold">84% Conversion Target</span>
+            <span>Avg Talk: <strong>{avgTalkTime}</strong></span>
+            <span className="text-og-green font-semibold">{conversions.conversionRate} Conversion Rate</span>
           </div>
         </div>
 
@@ -63,22 +61,22 @@ export default function KpiCards() {
           </div>
           <div className="flex items-baseline justify-between">
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-[#1c1c1e]">{USER.callsCompleted}</span>
-              <span className="text-xs text-og-gray-text font-bold">/ {USER.callsTotal} calls</span>
+              <span className="text-2xl font-black text-[#1c1c1e]">{shiftProgress.callsCompleted}</span>
+              <span className="text-xs text-og-gray-text font-bold">/ {shiftProgress.callsTotal} calls</span>
             </div>
-            <span className="text-sm font-black text-og-green">{completedPct}%</span>
+            <span className="text-sm font-black text-og-green">{shiftProgress.completedPct}%</span>
           </div>
 
           {/* Visual Progress Bar */}
           <div className="w-full h-2.5 bg-og-gray rounded-full overflow-hidden mt-3">
             <div
               className="h-full bg-gradient-to-r from-og-green to-og-green-light rounded-full transition-all duration-500"
-              style={{ width: `${completedPct}%` }}
+              style={{ width: `${shiftProgress.visualPct}%` }}
             />
           </div>
           <div className="flex items-center justify-between text-[11px] text-og-gray-text mt-2 pt-1 border-t border-og-gray-border">
-            <span>{USER.callsTotal - USER.callsCompleted} calls remaining</span>
-            <span className="text-og-green font-bold">On Pace ✓</span>
+            <span>{shiftProgress.callsRemaining} calls remaining</span>
+            <span className="font-bold" style={{ color: shiftPace.color }}>{shiftPace.label}</span>
           </div>
         </div>
 
