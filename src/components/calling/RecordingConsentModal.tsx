@@ -70,35 +70,45 @@ export default function RecordingConsentModal({
     },
   };
 
-  const activePhone = isMinor && guardianPhone ? guardianPhone : phone;
+  // Strictly isolate activePhone: When isMinor is true, ALWAYS require guardianPhone. Never fall back to customer phone.
+  const activePhone = isMinor ? guardianPhone : phone;
 
-  const handleSendWhatsApp = () => {
-    const cleaned = activePhone.replace(/\D/g, '');
+  const validatePhone = (): boolean => {
+    const rawNumber = isMinor ? guardianPhone : phone;
+    const cleaned = rawNumber.replace(/\D/g, '');
     if (cleaned.length !== 10) {
       setPhoneError(
         isMinor
           ? 'Enter a valid 10-digit parent/guardian mobile number.'
           : 'Enter a valid 10-digit customer mobile number.'
       );
-      return;
+      return false;
     }
     setPhoneError('');
+    return true;
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!validatePhone()) return;
     setWaSent(true);
   };
 
   const handleVoiceYes = () => {
-    onAgree('voice', activePhone, lang, isMinor, isMinor ? guardianPhone || phone : undefined);
+    if (isMinor && !validatePhone()) return;
+    onAgree('voice', isMinor ? guardianPhone : phone, lang, isMinor, isMinor ? guardianPhone : undefined);
   };
 
   const handleVoiceNo = () => {
-    onRefuse('voice', isMinor, isMinor ? guardianPhone || phone : undefined);
+    if (isMinor && !validatePhone()) return;
+    onRefuse('voice', isMinor, isMinor ? guardianPhone : undefined);
   };
 
   const handleWaReply = (agreed: boolean) => {
+    if (isMinor && !validatePhone()) return;
     if (agreed) {
-      onAgree('wa', activePhone, lang, isMinor, isMinor ? guardianPhone || phone : undefined);
+      onAgree('wa', isMinor ? guardianPhone : phone, lang, isMinor, isMinor ? guardianPhone : undefined);
     } else {
-      onRefuse('wa', isMinor, isMinor ? guardianPhone || phone : undefined);
+      onRefuse('wa', isMinor, isMinor ? guardianPhone : undefined);
     }
   };
 
@@ -270,7 +280,7 @@ export default function RecordingConsentModal({
 
               {/* Parent Phone input if Minor */}
               {isMinor && (
-                <div className="mb-3 p-2.5 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
+                <div className={`mb-3 p-2.5 rounded-xl space-y-1 transition-all ${phoneError ? 'bg-red-50 border border-red-300' : 'bg-blue-50 border border-blue-200'}`}>
                   <label className="text-[11px] font-bold text-blue-950 block">
                     Parent / Guardian's Mobile Number (Mandatory)
                   </label>
@@ -281,15 +291,26 @@ export default function RecordingConsentModal({
                     <input
                       type="tel"
                       value={guardianPhone}
-                      onChange={(e) => setGuardianPhone(e.target.value)}
+                      onChange={(e) => {
+                        setGuardianPhone(e.target.value);
+                        setPhoneError('');
+                      }}
                       placeholder="Parent's 10-digit number"
-                      className="flex-1 px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-semibold text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                      className={`flex-1 px-3 py-1.5 bg-white rounded-lg text-xs font-semibold text-gray-900 focus:outline-hidden focus:ring-2 ${
+                        phoneError ? 'border border-red-500 focus:ring-red-400' : 'border border-blue-300 focus:ring-blue-600'
+                      }`}
                       maxLength={10}
                     />
                   </div>
-                  <p className="text-[10px] text-blue-800">
-                    Consent will be registered under guardian verification.
-                  </p>
+                  {phoneError ? (
+                    <p className="text-[11px] text-red-600 font-medium flex items-center gap-1 pt-0.5">
+                      <AlertCircle size={12} /> {phoneError}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-blue-800">
+                      Consent will be registered under guardian verification.
+                    </p>
+                  )}
                 </div>
               )}
 

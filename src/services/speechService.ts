@@ -34,6 +34,8 @@ export class SpeechService {
   private lastSpeakingEndTime = 0;
   private lastProcessedText = '';
   private lastProcessedTime = 0;
+  private lastSynthesizedText = '';
+  private ttsCooldownTimer: ReturnType<typeof setTimeout> | null = null;
 
   getIsSpeakingAloud(): boolean {
     return this.isSpeakingAloud;
@@ -46,8 +48,27 @@ export class SpeechService {
       return;
     }
 
-    this.synth.cancel(); // Stop any pending utterances
+    if (this.ttsCooldownTimer) {
+      clearTimeout(this.ttsCooldownTimer);
+      this.ttsCooldownTimer = null;
+    }
+
+    // Retain customer synthesized text to filter any acoustic echo leaks
+    this.lastSynthesizedText = text.toLowerCase().trim();
     this.isSpeakingAloud = true;
+
+    // CRITICAL P0: Abort speech recognition immediately so incoming laptop speaker audio is not captured into STT buffer
+    if (this.recognition && this.isListening) {
+      try {
+        this.recognition.abort(); // Immediately halts audio capture and purges buffers in-flight
+      } catch (err) {
+        // Recognition may already be stopped
+      }
+      this.isListening = false;
+      if (this.onStatusCallback) this.onStatusCallback('idle');
+    }
+
+    this.synth.cancel(); // Stop any pending utterances
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
@@ -67,10 +88,21 @@ export class SpeechService {
 
     const handleEnd = () => {
       this.lastSpeakingEndTime = Date.now();
-      // 400ms room acoustic decay delay before re-enabling agent mic transcription
-      setTimeout(() => {
+      // 500ms room acoustic decay cooldown before re-enabling agent mic transcription
+      this.ttsCooldownTimer = setTimeout(() => {
         this.isSpeakingAloud = false;
-      }, 400);
+        // Resume STT only after TTS playback finishes and acoustic cooldown elapses
+        if (this.shouldBeListening && !this.isListening && this.recognition) {
+          try {
+            this.recognition.start();
+            this.isListening = true;
+            if (this.onStatusCallback) this.onStatusCallback('listening');
+          } catch (err) {
+            this.isListening = false;
+          }
+        }
+      }, 500);
+
       if (onEnd) onEnd();
     };
 
@@ -81,6 +113,10 @@ export class SpeechService {
   }
 
   stopSpeaking() {
+    if (this.ttsCooldownTimer) {
+      clearTimeout(this.ttsCooldownTimer);
+      this.ttsCooldownTimer = null;
+    }
     if (this.synth) {
       this.synth.cancel();
     }
@@ -140,6 +176,32 @@ export class SpeechService {
     this.analyser = null;
   }
 
+  // Algorithmic echo filter: suppresses audio that matches recent customer speech synthesis
+  private isEchoOfCustomerUtterance(agentText: string): boolean {
+    if (!this.lastSynthesizedText) return false;
+    const cleanAgent = agentText.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+    const cleanCustomer = this.lastSynthesizedText.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+    if (!cleanAgent || !cleanCustomer) return false;
+
+    // Substring containment in customer speech
+    if (cleanCustomer.includes(cleanAgent)) {
+      console.warn('SpeechRecognition: Suppressed customer speech echo (substring):', agentText);
+      return true;
+    }
+
+    // Word token overlap check
+    const agentWords = cleanAgent.split(/\s+/).filter((w) => w.length > 2);
+    if (agentWords.length >= 3) {
+      const customerWords = new Set(cleanCustomer.split(/\s+/));
+      const matchCount = agentWords.filter((w) => customerWords.has(w)).length;
+      if (matchCount / agentWords.length >= 0.5) {
+        console.warn('SpeechRecognition: Suppressed customer speech echo (token overlap):', agentText);
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Validate agent speech recognition results to filter noise and isolated numbers
   private isValidUtterance(rawText: string): boolean {
     const text = rawText.trim();
@@ -197,7 +259,7 @@ export class SpeechService {
 
       this.recognition.onresult = (event: any) => {
         // Prevent microphone from transcribing the customer's synthesized voice or acoustic room decay
-        if (this.isSpeakingAloud || Date.now() - this.lastSpeakingEndTime < 400) {
+        if (this.isSpeakingAloud || Date.now() - this.lastSpeakingEndTime < 600) {
           return;
         }
 
@@ -219,6 +281,11 @@ export class SpeechService {
         const now = Date.now();
 
         if (cleaned && this.isValidUtterance(cleaned)) {
+          // Suppress TTS acoustic echo leak
+          if (this.isEchoOfCustomerUtterance(cleaned)) {
+            return;
+          }
+
           // Deduplicate identical utterances fired within 2.5 seconds
           if (cleaned === this.lastProcessedText && now - this.lastProcessedTime < 2500) {
             return;
@@ -253,10 +320,10 @@ export class SpeechService {
 
       this.recognition.onend = () => {
         this.isListening = false;
-        // Auto-restart if call is still active and recognition was not intentionally stopped
-        if (this.shouldBeListening) {
+        // Auto-restart only if call is still active, recognition was not intentionally stopped, and TTS is NOT currently speaking
+        if (this.shouldBeListening && !this.isSpeakingAloud) {
           setTimeout(() => {
-            if (this.shouldBeListening && !this.isListening && this.recognition) {
+            if (this.shouldBeListening && !this.isSpeakingAloud && !this.isListening && this.recognition) {
               try {
                 this.recognition.start();
                 this.isListening = true;

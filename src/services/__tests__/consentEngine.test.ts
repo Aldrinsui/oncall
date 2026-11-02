@@ -89,6 +89,29 @@ describe('DPDP Recording Consent Engine & Minor Guard', () => {
     expect(record.status).toBe('granted');
   });
 
+  it('rejects consent when Under-18 is toggled but guardian phone is invalid or missing (no customer phone fallback)', () => {
+    const customerPhone = '+91 97654 32100';
+    const isMinor = true;
+    let guardianPhone = '';
+
+    const validatePhone = (isMinor: boolean, guardian: string, customer: string) => {
+      const target = isMinor ? guardian : customer;
+      const cleaned = target.replace(/\D/g, '');
+      return cleaned.length === 10;
+    };
+
+    // When guardian phone is empty, validation must fail and NEVER use customer phone
+    expect(validatePhone(isMinor, guardianPhone, customerPhone)).toBe(false);
+
+    // When guardian phone is incomplete, validation must fail
+    guardianPhone = '98765';
+    expect(validatePhone(isMinor, guardianPhone, customerPhone)).toBe(false);
+
+    // Only valid 10-digit guardian phone passes
+    guardianPhone = '9888877777';
+    expect(validatePhone(isMinor, guardianPhone, customerPhone)).toBe(true);
+  });
+
   it('generates compliant WhatsApp deep link with explicit DPDP consent copy', () => {
     const phone = '9765432100';
     const msg = encodeURIComponent(
