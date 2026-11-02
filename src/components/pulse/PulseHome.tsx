@@ -1,23 +1,22 @@
+import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   MessageCircle,
-  Bot,
   Award,
-  TrendingUp,
   ChevronRight,
-  Flame,
   Sparkles,
-  Heart,
   ThumbsUp,
 } from 'lucide-react';
 import { AGENT_ROLES, PULSE_CHANNELS } from '../../data/mockData';
+import AvaniBot from './AvaniBot';
 
 interface PulseHomeProps {
   onSelectChannel: (channelId: string) => void;
 }
 
 export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
-  const { showToast, setActiveView, setPlanTab, startCall } = useApp();
+  const { showToast, setActiveView, setPlanTab, setLeadsModalOpen } = useApp();
+  const [externalPrompt, setExternalPrompt] = useState<string | null>(null);
 
   const kudosPosts = [
     {
@@ -44,9 +43,17 @@ export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
       setPlanTab('practise');
       showToast('Switched to Pitch Coach roleplay simulator in Plan');
     } else if (agentTitle.includes('Walk-out')) {
-      setActiveView('plan');
-      setPlanTab('outgoing');
-      showToast('Loaded Walk-out recovery leads queue');
+      setExternalPrompt('Which leads should I prioritize today?');
+      showToast('Walk-out Recovery: Prioritizing high-intent store leads in AvaniBot');
+    } else if (agentTitle.includes('ASM Agent')) {
+      setExternalPrompt("What's our latest escalation?");
+      showToast('ASM Agent: Surfacing pending escalations & manager directives');
+    } else if (agentTitle.includes('Tele-caller')) {
+      setLeadsModalOpen(true);
+      showToast('Tele-caller: Prepared outbound calling queue');
+    } else if (agentTitle.includes('Follow-up')) {
+      setExternalPrompt('What callbacks are pending?');
+      showToast('Follow-up: Identifying due callbacks and follow-ups in AvaniBot');
     } else {
       showToast(`Activated ${agentTitle} assistance`);
     }
@@ -54,46 +61,20 @@ export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
 
   return (
     <div className="space-y-5 animate-fade-in pb-4">
-      {/* AvaniBot Hero Banner matching Mock */}
-      <div className="bg-gradient-to-r from-og-night-mid via-[#252849] to-[#2d2d5f] text-white p-5 rounded-card shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-og-green to-emerald-400 flex items-center justify-center text-white shadow-lg flex-shrink-0">
-            <Bot size={26} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-og-green-light uppercase tracking-wider">
-                AvaniBot • Shift AI Assistant
-              </span>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.2 rounded-full font-bold">
-                Online
-              </span>
-            </div>
-            <h2 className="text-lg sm:text-xl font-bold mt-0.5">
-              AvaniBot: your AI manager assistant
-            </h2>
-            <p className="text-xs text-gray-300 mt-0.5">
-              Ask about objection scripts, check store stock, or request real-time QA evaluation.
-            </p>
-          </div>
-        </div>
+      {/* AvaniBot Interactive Shift AI Assistant */}
+      <AvaniBot
+        onSelectChannel={onSelectChannel}
+        externalPrompt={externalPrompt}
+        onClearExternalPrompt={() => setExternalPrompt(null)}
+      />
 
-        <button
-          onClick={() => onSelectChannel('callcentre-team')}
-          className="px-4 py-2 bg-og-green hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs self-start sm:self-auto flex-shrink-0"
-        >
-          <span>Open Team Channel</span>
-          <ChevronRight size={14} />
-        </button>
-      </div>
-
-      {/* Role and Task Agents Row (From Assignment Page 1 & 4) */}
+      {/* Role and Task Agents Row */}
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold text-og-forest uppercase tracking-wider">
             Specialized Shift Agents
           </span>
-          <span className="text-xs text-og-gray-text">Autonomous task execution</span>
+          <span className="text-xs text-og-gray-text">Shift Assistance Workflows</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
@@ -101,7 +82,7 @@ export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
             <button
               key={agent.id}
               onClick={() => handleRoleAgentClick(agent.title)}
-              className="p-3.5 rounded-xl border border-og-gray-border bg-white hover:border-og-green/40 hover:shadow-xs transition-all text-left flex flex-col justify-between group"
+              className="p-3.5 rounded-xl border border-og-gray-border bg-white hover:border-og-green/40 hover:shadow-xs transition-all text-left flex flex-col justify-between group cursor-pointer"
             >
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -146,7 +127,7 @@ export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 shadow-xs"
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 shadow-xs"
                     style={{ backgroundColor: `${ch.color}15` }}
                   >
                     {ch.icon}
@@ -171,7 +152,7 @@ export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
 
                 <ChevronRight
                   size={16}
-                  className="text-gray-300 group-hover:text-og-forest transition-colors flex-shrink-0"
+                  className="text-gray-300 group-hover:text-og-forest transition-colors shrink-0"
                 />
               </div>
             ))}
@@ -221,7 +202,7 @@ export default function PulseHome({ onSelectChannel }: PulseHomeProps) {
 
           <button
             onClick={() => showToast('Kudos shoutout submitted to store manager')}
-            className="mt-4 w-full py-2 bg-og-gray hover:bg-gray-200 text-og-forest rounded-lg text-xs font-bold transition-colors"
+            className="mt-4 w-full py-2 bg-og-gray hover:bg-gray-200 text-og-forest rounded-lg text-xs font-bold transition-colors cursor-pointer"
           >
             Send Kudos to a Teammate
           </button>
