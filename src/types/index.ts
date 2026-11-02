@@ -179,6 +179,13 @@ export interface ChatMessage {
 
 export type PulseMessage = ChatMessage;
 
+export interface PinnedActionItem {
+  id: string;
+  question: string;
+  options: string[];
+  meta?: string;
+}
+
 export interface PulseThread {
   title: string;
   dateLabel: string;
@@ -187,6 +194,7 @@ export interface PulseThread {
     question: string;
     options: string[];
   };
+  pinnedItems?: PinnedActionItem[];
 }
 
 // ─── Notifications ──────────────────────────────────────────────

@@ -5,13 +5,14 @@ import {
   Send,
   HelpCircle,
   CheckCircle2,
-  Calendar,
-  Sparkles,
   Users,
-  Paperclip,
+  Bot,
+  Sparkles,
+  AlertCircle,
 } from 'lucide-react';
-import { PULSE_THREADS, PULSE_CHANNELS } from '../../data/mockData';
-import type { PulseMessage } from '../../types';
+import { PULSE_THREADS, PULSE_CHANNELS, LEADS } from '../../data/mockData';
+import { answerQuery, type AvaniContext } from '../../services/avaniAssistant';
+import type { PinnedActionItem } from '../../types';
 
 interface PulseChannelProps {
   channelId: string;
@@ -44,16 +45,40 @@ function SafeMessageText({ text, isMe }: { text: string; isMe: boolean }) {
 }
 
 export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
-  const { showToast, pulseMessages, sendPulseMessage } = useApp();
+  const {
+    showToast,
+    pulseMessages,
+    sendPulseMessage,
+    pinnedAnswers,
+    answerPinnedCard,
+    shiftProgress,
+    recentCalls,
+    dailyTasks,
+    callQueue,
+  } = useApp();
 
   const channelMeta = PULSE_CHANNELS.find((c) => c.id === channelId) || PULSE_CHANNELS[0];
+  const isAvaniBotChannel = channelId === 'avanibot';
 
   const [inputText, setInputText] = useState('');
-  const [needsInputAnswered, setNeedsInputAnswered] = useState<string | null>(null);
-  const [customReply, setCustomReply] = useState('');
+  const [customReplyByCard, setCustomReplyByCard] = useState<Record<string, string>>({});
+  const [isBotTyping, setIsBotTyping] = useState(false);
 
   const messages = pulseMessages[channelId] || (PULSE_THREADS[channelId]?.messages ?? []);
   const activeThread = PULSE_THREADS[channelId];
+
+  // Multiple pinned action items support with fallback to legacy single needsInput
+  const pinnedList: PinnedActionItem[] = activeThread?.pinnedItems
+    ? activeThread.pinnedItems
+    : activeThread?.needsInput
+    ? [
+        {
+          id: `${channelId}-needs-input`,
+          question: activeThread.needsInput.question,
+          options: activeThread.needsInput.options,
+        },
+      ]
+    : [];
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -61,28 +86,80 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, channelId]);
+  }, [messages, channelId, isBotTyping]);
 
-  const handleSendMessage = (textToSend?: string) => {
+  const handleSendMessage = async (textToSend?: string) => {
     const content = textToSend || inputText;
-    if (!content.trim()) return;
+    if (!content.trim() || isBotTyping) return;
 
     sendPulseMessage(channelId, content.trim());
     setInputText('');
-    showToast('Message sent to ' + channelMeta.name);
+    showToast(`Message sent to ${channelMeta.name}`);
+
+    // If active channel is AvaniBot, trigger grounded assistant response
+    if (isAvaniBotChannel) {
+      setIsBotTyping(true);
+      const context: AvaniContext = {
+        shiftProgress,
+        leads: LEADS,
+        recentCalls,
+        dailyTasks,
+        pulseMessages,
+        callQueue,
+      };
+
+      try {
+        await new Promise((res) => setTimeout(res, 200));
+        const botResp = await answerQuery(content.trim(), context);
+        sendPulseMessage('avanibot', botResp.text, {
+          who: 'AvaniBot',
+          initials: '🤖',
+          bg: '#e1f5ee',
+          color: '#0f6e56',
+          isAgent: false,
+        });
+      } catch (e) {
+        sendPulseMessage(
+          'avanibot',
+          'Sorry Arvind, I encountered an error checking shift records. Please try again.',
+          {
+            who: 'AvaniBot',
+            initials: '🤖',
+            bg: '#fdecec',
+            color: '#c94040',
+            isAgent: false,
+          }
+        );
+      } finally {
+        setIsBotTyping(false);
+      }
+    }
   };
 
-  const handleAnswerNeedsInput = (option: string) => {
-    setNeedsInputAnswered(option);
-    handleSendMessage(`@Sunita Rao ${option} for the 4:30 PM Friday coaching session.`);
+  const handleSelectPinnedOption = (card: PinnedActionItem, option: string) => {
+    if (isAvaniBotChannel) {
+      answerPinnedCard(card.id, option);
+      handleSendMessage(option);
+    } else {
+      answerPinnedCard(card.id, `${option} for the coaching session.`, channelId);
+      showToast(`Response submitted for: ${card.question}`);
+    }
   };
 
-  const handleCustomNeedsInputSubmit = (e: React.FormEvent) => {
+  const handleCustomPinnedSubmit = (card: PinnedActionItem, e: React.FormEvent) => {
     e.preventDefault();
-    if (!customReply.trim()) return;
-    setNeedsInputAnswered(customReply);
-    handleSendMessage(`@Sunita Rao ${customReply}`);
-    setCustomReply('');
+    const reply = (customReplyByCard[card.id] || '').trim();
+    if (!reply) return;
+
+    if (isAvaniBotChannel) {
+      answerPinnedCard(card.id, reply);
+      handleSendMessage(reply);
+    } else {
+      answerPinnedCard(card.id, reply, channelId);
+      showToast('Custom reply sent to channel');
+    }
+
+    setCustomReplyByCard((prev) => ({ ...prev, [card.id]: '' }));
   };
 
   return (
@@ -92,7 +169,7 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-1.5 rounded-lg border border-og-gray-border hover:bg-og-gray text-[#1c1c1e] transition-colors"
+            className="p-1.5 rounded-lg border border-og-gray-border hover:bg-og-gray text-[#1c1c1e] transition-colors cursor-pointer"
             aria-label="Back to channels"
           >
             <ArrowLeft size={16} />
@@ -100,8 +177,14 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base font-bold text-[#1c1c1e]">{channelMeta.name}</h3>
-              <span className="text-[10px] bg-emerald-50 text-og-green px-2 py-0.5 rounded-full font-bold">
-                Active Channel
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                  isAvaniBotChannel
+                    ? 'bg-emerald-100 text-og-forest'
+                    : 'bg-emerald-50 text-og-green'
+                }`}
+              >
+                {isAvaniBotChannel ? 'Dedicated AI Assistant' : 'Active Channel'}
               </span>
             </div>
             <p className="text-xs text-og-gray-text">{channelMeta.lastMessage}</p>
@@ -109,8 +192,17 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
         </div>
 
         <div className="flex items-center gap-1.5 text-xs text-og-gray-text bg-og-gray/60 px-2.5 py-1 rounded-lg">
-          <Users size={14} />
-          <span className="font-semibold">6 Team Members</span>
+          {isAvaniBotChannel ? (
+            <>
+              <Bot size={14} className="text-og-green" />
+              <span className="font-semibold text-og-forest">Shift AI Assistant</span>
+            </>
+          ) : (
+            <>
+              <Users size={14} />
+              <span className="font-semibold">6 Team Members</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -123,66 +215,105 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
           </span>
         </div>
 
-        {/* Pinned "Needs Your Input" Card */}
-        {activeThread?.needsInput && (
-          <div className="p-4 rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50/70 to-orange-50/60 shadow-xs space-y-3">
-            <div className="flex items-start gap-2.5">
-              <span className="p-1 rounded-lg bg-amber-100 text-amber-800 flex-shrink-0 mt-0.5">
-                <HelpCircle size={15} />
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wider">
-                    Needs Your Input • Action Required
-                  </span>
-                </div>
-                <h4 className="text-xs font-bold text-[#1c1c1e] mt-0.5">
-                  {activeThread.needsInput.question}
-                </h4>
-              </div>
-            </div>
-
-            {needsInputAnswered ? (
-              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-xs text-og-forest font-bold">
-                <CheckCircle2 size={15} className="text-og-green" />
-                <span>Response submitted: "{needsInputAnswered}"</span>
-              </div>
-            ) : (
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {activeThread.needsInput.options.map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => handleAnswerNeedsInput(opt)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs ${
-                        opt.includes('Confirmed')
-                          ? 'bg-og-green hover:bg-og-forest text-white'
-                          : 'bg-white hover:bg-gray-100 text-[#1c1c1e] border border-og-gray-border'
+        {/* Pinned Action Items Cards (Single or Multiple) */}
+        {pinnedList.length > 0 && (
+          <div className="space-y-3">
+            {pinnedList.map((card) => {
+              const answeredValue = pinnedAnswers[card.id];
+              return (
+                <div
+                  key={card.id}
+                  className={`p-4 rounded-xl border shadow-xs space-y-3 ${
+                    isAvaniBotChannel
+                      ? 'border-emerald-200 bg-gradient-to-r from-emerald-50/70 to-teal-50/60'
+                      : 'border-amber-200 bg-gradient-to-r from-amber-50/70 to-orange-50/60'
+                  }`}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span
+                      className={`p-1 rounded-lg flex-shrink-0 mt-0.5 ${
+                        isAvaniBotChannel
+                          ? 'bg-emerald-100 text-og-forest'
+                          : 'bg-amber-100 text-amber-800'
                       }`}
                     >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
+                      {isAvaniBotChannel ? <Sparkles size={15} /> : <HelpCircle size={15} />}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-bold uppercase tracking-wider ${
+                            isAvaniBotChannel ? 'text-og-forest' : 'text-amber-900'
+                          }`}
+                        >
+                          {isAvaniBotChannel ? 'AvaniBot Action Item' : 'Needs Your Input • Action Required'}
+                        </span>
+                        {card.meta && (
+                          <span className="text-[10px] text-gray-500 font-medium">
+                            • {card.meta}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-xs font-bold text-[#1c1c1e] mt-0.5">
+                        {card.question}
+                      </h4>
+                    </div>
+                  </div>
 
-                <form onSubmit={handleCustomNeedsInputSubmit} className="flex items-center gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={customReply}
-                    onChange={(e) => setCustomReply(e.target.value)}
-                    placeholder="Or type a custom note to Sunita..."
-                    className="flex-1 bg-white border border-og-gray-border rounded-lg px-3 py-1.5 text-xs text-[#1c1c1e] placeholder-gray-400 focus:outline-hidden focus:border-og-green"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!customReply.trim()}
-                    className="px-3 py-1.5 bg-og-forest hover:bg-og-forest-deep disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors"
-                  >
-                    Reply
-                  </button>
-                </form>
-              </div>
-            )}
+                  {answeredValue ? (
+                    <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center gap-2 text-xs text-og-forest font-bold">
+                      <CheckCircle2 size={15} className="text-og-green" />
+                      <span>Response submitted: "{answeredValue}"</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {card.options.map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => handleSelectPinnedOption(card, opt)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                              opt.includes('Confirmed') || isAvaniBotChannel
+                                ? 'bg-og-green hover:bg-og-forest text-white'
+                                : 'bg-white hover:bg-gray-100 text-[#1c1c1e] border border-og-gray-border'
+                            }`}
+                          >
+                            {opt}
+                          </button>
+                        ))}
+                      </div>
+
+                      {!isAvaniBotChannel && (
+                        <form
+                          onSubmit={(e) => handleCustomPinnedSubmit(card, e)}
+                          className="flex items-center gap-2 pt-1"
+                        >
+                          <input
+                            type="text"
+                            value={customReplyByCard[card.id] || ''}
+                            onChange={(e) =>
+                              setCustomReplyByCard((prev) => ({
+                                ...prev,
+                                [card.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Or type a custom response..."
+                            className="flex-1 bg-white border border-og-gray-border rounded-lg px-3 py-1.5 text-xs text-[#1c1c1e] placeholder-gray-400 focus:outline-hidden focus:border-og-green"
+                          />
+                          <button
+                            type="submit"
+                            disabled={!(customReplyByCard[card.id] || '').trim()}
+                            className="px-3 py-1.5 bg-og-forest hover:bg-og-forest-deep disabled:opacity-40 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                          >
+                            Reply
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -204,6 +335,8 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
                 className={`p-3 rounded-2xl max-w-[85%] text-xs leading-relaxed shadow-xs ${
                   isMe
                     ? 'bg-gradient-to-r from-og-green to-og-forest text-white rounded-tr-none'
+                    : m.who === 'AvaniBot'
+                    ? 'bg-white text-[#1c1c1e] border-2 border-emerald-500/30 rounded-tl-none shadow-xs'
                     : 'bg-white text-[#1c1c1e] border border-og-gray-border rounded-tl-none'
                 }`}
               >
@@ -212,6 +345,13 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
             </div>
           );
         })}
+
+        {isBotTyping && (
+          <div className="flex items-center gap-2 text-xs text-og-gray-text p-2 animate-fade-in">
+            <Bot size={15} className="text-og-green animate-bounce" />
+            <span>AvaniBot is referencing shift records...</span>
+          </div>
+        )}
       </div>
 
       {/* Channel Reply Input Bar */}
@@ -220,22 +360,28 @@ export default function PulseChannel({ channelId, onBack }: PulseChannelProps) {
           e.preventDefault();
           handleSendMessage();
         }}
-        className="p-3 bg-white border-t border-og-gray-border flex items-center gap-2"
+        className="p-3 border-t border-og-gray-border bg-white flex items-center gap-2"
       >
         <input
           type="text"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder={`Message ${channelMeta.name}...`}
-          className="flex-1 bg-og-gray/50 border border-og-gray-border rounded-xl px-4 py-2.5 text-xs text-[#1c1c1e] placeholder-gray-400 focus:outline-hidden focus:border-og-green focus:bg-white"
+          placeholder={
+            isAvaniBotChannel
+              ? 'Ask AvaniBot about targets, leads, callbacks, escalations or tasks...'
+              : `Message ${channelMeta.name}...`
+          }
+          disabled={isBotTyping}
+          className="flex-1 bg-og-gray border border-og-gray-border rounded-xl px-4 py-2.5 text-xs text-[#1c1c1e] placeholder-gray-400 focus:outline-hidden focus:border-og-green"
+          aria-label={`Message ${channelMeta.name}`}
         />
         <button
           type="submit"
-          disabled={!inputText.trim()}
-          className="p-2.5 bg-og-green hover:bg-og-forest disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors shadow-xs flex items-center justify-center"
-          aria-label="Send channel message"
+          disabled={!inputText.trim() || isBotTyping}
+          className="px-4 py-2.5 bg-og-green hover:bg-og-forest disabled:opacity-40 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
         >
-          <Send size={15} />
+          <span>Send</span>
+          <Send size={13} />
         </button>
       </form>
     </div>

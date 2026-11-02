@@ -53,6 +53,7 @@ export default function AvaniBot({
     recentCalls,
     dailyTasks,
     pulseMessages,
+    sendPulseMessage,
     callQueue,
     setActiveView,
     setPlanTab,
@@ -120,12 +121,23 @@ export default function AvaniBot({
       callQueue,
     };
 
+    sendPulseMessage('avanibot', textToSend);
+
     try {
       // Simulate quick natural processing delay (150ms)
       await new Promise((res) => setTimeout(res, 150));
       const response: AvaniResponse = await answerQuery(textToSend, context);
 
-      // Verify this is still the newest query before setting state
+      // Record to central Pulse store
+      sendPulseMessage('avanibot', response.text, {
+        who: 'AvaniBot',
+        initials: '🤖',
+        bg: '#e1f5ee',
+        color: '#0f6e56',
+        isAgent: false,
+      });
+
+      // Verify this is still the newest query before setting local state
       if (requestId === activeRequestIdRef.current) {
         const botMessage: ChatMessage = {
           id: response.id,
@@ -251,6 +263,14 @@ export default function AvaniBot({
           >
             <RotateCcw size={14} />
             <span className="hidden sm:inline">Reset</span>
+          </button>
+          <button
+            onClick={() => onSelectChannel('avanibot')}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-white/15"
+            title="Open dedicated full conversation view with pinned actions"
+          >
+            <Bot size={14} className="text-og-green-light" />
+            <span className="hidden sm:inline">Dedicated View</span>
           </button>
           <button
             onClick={() => onSelectChannel('callcentre-team')}

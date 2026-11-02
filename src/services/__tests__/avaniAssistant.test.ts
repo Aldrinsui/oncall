@@ -174,7 +174,8 @@ describe('AvaniBot Shift Assistant Service', () => {
       const res = handleWalkoutRecovery(LEADS);
       expect(res.text).toContain('Walk-out Recovery Workflow Activated');
       expect(res.text).toContain('Mukunda R.');
-      expect(res.actions?.[0].payload.tab).toBe('outgoing');
+      expect(res.actions?.some((a) => a.type === 'START_CALL')).toBe(true);
+      expect(res.actions?.find((a) => a.type === 'NAVIGATE_VIEW')?.payload.tab).toBe('outgoing');
     });
 
     it('Pitch Coach agent activates roleplay practice scenario', () => {
@@ -188,7 +189,7 @@ describe('AvaniBot Shift Assistant Service', () => {
       const res = handleAsmAgent({ escalations: [...PULSE_THREADS['escalations'].messages] });
       expect(res.text).toContain('ASM Oversight Summary');
       expect(res.text).toContain('Priya Iyer');
-      expect(res.text).toContain('Hold all outbound calls');
+      expect(res.text).toContain('Sunita Rao');
     });
 
     it('Tele-caller agent prepares outbound call queue', () => {
@@ -196,6 +197,73 @@ describe('AvaniBot Shift Assistant Service', () => {
       expect(res.text).toContain('Tele-caller Outbound Queue Prepared');
       expect(res.text).toContain('Priya Iyer');
       expect(res.actions?.[0].type).toBe('OPEN_QUEUE');
+    });
+
+    it('dynamically adapts to different escalation records rather than hardcoding', () => {
+      const customEscalationMsg = [
+        {
+          id: 'es-custom',
+          who: 'System',
+          initials: '🚨',
+          bg: '#fdecec',
+          color: '#e24b4a',
+          text: '🔴 <b>ESCALATION:</b> Rajesh Sharma delivery delay on SmartGRID Luxe. Order #9910. Needs logistics escalation.',
+          time: '3:30 PM',
+        },
+        {
+          id: 'es-manager',
+          who: 'Ravi Kumar',
+          initials: 'RK',
+          bg: '#faeeda',
+          color: '#854f0b',
+          text: 'I spoke with warehouse — dispatching replacement unit tomorrow morning.',
+          time: '3:45 PM',
+        },
+      ];
+
+      const res = formatEscalationResponse({ escalations: customEscalationMsg });
+      expect(res.text).toContain('Rajesh Sharma delivery delay on SmartGRID Luxe');
+      expect(res.text).toContain('Order #9910');
+      expect(res.text).toContain('Ravi Kumar (3:45 PM)');
+      expect(res.text).not.toContain('Priya Iyer');
+    });
+
+    it('dynamically recommends highest-scoring lead in Walk-out Recovery, not hardcoded Mukunda', () => {
+      const customLeads = [
+        {
+          ...LEADS[1], // Ritu S.
+          source: 'Walk-in → Store Indiranagar',
+          attractivenessScore: 95,
+          emiNote: 'Pre-approved HDFC loan card',
+        },
+      ];
+
+      const res = handleWalkoutRecovery(customLeads);
+      expect(res.text).toContain('Call Ritu S. first (Score: 95/100)');
+      expect(res.text).toContain('Pre-approved HDFC loan card');
+      expect(res.text).not.toContain('Mukunda R.');
+    });
+
+    it('handles empty walk-in leads gracefully', () => {
+      const res = handleWalkoutRecovery([]);
+      expect(res.text).toContain('No store walk-in leads found in current records');
+    });
+  });
+
+  describe('Central AvaniBot Pulse Thread & Pinned Action Items', () => {
+    it('defines dedicated avanibot channel with two pinned action items', () => {
+      const avaniThread = PULSE_THREADS['avanibot'];
+      expect(avaniThread).toBeDefined();
+      expect(avaniThread.pinnedItems?.length).toBe(2);
+
+      const [progressCard, escalationCard] = avaniThread.pinnedItems!;
+      expect(progressCard.id).toBe('pin-progress');
+      expect(progressCard.options).toContain('Check Calling Progress');
+      expect(progressCard.options).toContain('Prioritize Top Leads');
+
+      expect(escalationCard.id).toBe('pin-escalation');
+      expect(escalationCard.options).toContain('Review Escalation');
+      expect(escalationCard.options).toContain('View #escalations');
     });
   });
 });

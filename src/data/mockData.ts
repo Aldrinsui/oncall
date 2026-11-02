@@ -343,6 +343,7 @@ export const CALENDAR_INVITES: CalendarInvite[] = [
 // ─── Pulse Channels ─────────────────────────────────────────────
 
 export const PULSE_CHANNELS: PulseChannel[] = [
+  { id: 'avanibot', name: '🤖 AvaniBot Assistant', icon: '🤖', unread: 0, lastMessage: 'AvaniBot: Ready to assist with shift progress & leads', color: '#1d9e75' },
   { id: 'callcentre-team', name: '#callcentre-team', icon: '📞', unread: 3, lastMessage: 'Sunita: Greeting QA scores need attention', color: '#c8860a' },
   { id: 'customer-discussions', name: '#customer-discussions', icon: '💬', unread: 1, lastMessage: 'Arvind: Mukunda callback confirmed 4:30 PM', color: '#1d9e75' },
   { id: 'store-updates', name: '#store-updates', icon: '🏪', unread: 0, lastMessage: 'New SmartGRID Luxe stock arrived — Koramangala', color: '#185fa5' },
@@ -352,6 +353,36 @@ export const PULSE_CHANNELS: PulseChannel[] = [
 // ─── Pulse Threads ──────────────────────────────────────────────
 
 export const PULSE_THREADS: Record<string, PulseThread> = {
+  'avanibot': {
+    title: '🤖 AvaniBot Assistant',
+    dateLabel: 'Today · Shift AI Assistant',
+    messages: [
+      {
+        id: 'ab-init',
+        who: 'AvaniBot',
+        initials: '🤖',
+        bg: '#e1f5ee',
+        color: '#0f6e56',
+        text: 'Hello Arvind! I am AvaniBot, your grounded shift assistant.\n\nI am connected to your live calling targets, lead scores, callbacks, team escalations, and shift checklist.\nHow can I help you with your shift right now?',
+        time: 'Shift Start',
+        isAgent: false,
+      },
+    ],
+    pinnedItems: [
+      {
+        id: 'pin-progress',
+        question: 'Shift Target Check: 4 calls remaining to achieve 18-call target.',
+        options: ['Check Calling Progress', 'Prioritize Top Leads'],
+        meta: 'Target: 18 calls · Current: 14 completed (78%)',
+      },
+      {
+        id: 'pin-escalation',
+        question: 'Priority Hold: Priya Iyer billing dispute (₹22,000) under manager review.',
+        options: ['Review Escalation', 'View #escalations'],
+        meta: 'Directive from Sunita Rao: Do not call back yet',
+      },
+    ],
+  },
   'callcentre-team': {
     title: '#callcentre-team',
     dateLabel: 'Today · Call Centre Team',

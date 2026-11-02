@@ -300,11 +300,30 @@ export function formatEscalationResponse(
     };
   }
 
-  // Grounded extraction from #escalations
-  const text =
-    `Priya Iyer has a pending billing dispute involving ₹22,000.\n\n` +
-    `The escalation channel indicates that manager review is required before calling back. ` +
-    `Sunita Rao (Manager) stated: "I'll handle this one. Arvind, please don't call back until I've reviewed the account."`;
+  // Dynamically extract details from messages in #escalations
+  const cleaned = escalations.map((m) => ({
+    who: m.who,
+    time: m.time,
+    rawText: m.text.replace(/<[^>]+>/g, '').trim(),
+  }));
+
+  const systemIssue = cleaned.find(
+    (m) => m.who.toLowerCase() === 'system' || m.rawText.toLowerCase().includes('escalation')
+  ) || cleaned[0];
+
+  const followUpNotes = cleaned.filter((m) => m !== systemIssue);
+  const issueDescription = systemIssue.rawText.replace(/^[🔴🚨\s]*ESCALATION:\s*/i, '');
+
+  let text = `Latest store escalation (${systemIssue.time}):\n• ${issueDescription}`;
+
+  if (followUpNotes.length > 0) {
+    const notesSummary = followUpNotes
+      .map((n) => `"${n.rawText}" — ${n.who} (${n.time})`)
+      .join('\n');
+    text += `\n\nManager Directives & Review Status:\n${notesSummary}`;
+  } else {
+    text += `\n\nStatus: Pending review in #escalations channel.`;
+  }
 
   return {
     id: `avani-${Date.now()}`,
@@ -460,8 +479,22 @@ export function handleWalkoutRecovery(leads: Lead[]): AvaniResponse {
     .filter((l) => l.source.toLowerCase().includes('walk-in') || l.source.toLowerCase().includes('store'))
     .sort((a, b) => b.attractivenessScore - a.attractivenessScore);
 
+  if (walkinLeads.length === 0) {
+    return {
+      id: `agent-walkout-${Date.now()}`,
+      query: 'Walk-out Recovery Agent',
+      intent: 'prioritize_leads',
+      text: '🎯 Walk-out Recovery: No store walk-in leads found in current records.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isAvailable: true,
+    };
+  }
+
   const top = walkinLeads.slice(0, 3);
+  const highest = top[0];
   const list = top.map((l) => `• ${l.name} — Score: ${l.attractivenessScore} (${l.product}) · ${l.source}`);
+
+  const leadDetail = highest.emiNote || highest.interest || 'High purchase propensity';
 
   return {
     id: `agent-walkout-${Date.now()}`,
@@ -471,10 +504,11 @@ export function handleWalkoutRecovery(leads: Lead[]): AvaniResponse {
       `🎯 Walk-out Recovery Workflow Activated:\n` +
       `Identified ${walkinLeads.length} store walk-in visitors who left without purchasing:\n\n` +
       list.join('\n') +
-      `\n\nRecommendation: Call Mukunda R. first — requested 12-month zero-interest EMI with 2 hours remaining on offer.`,
+      `\n\nRecommendation: Call ${highest.name} first (Score: ${highest.attractivenessScore}/100) — ${leadDetail}.`,
     timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     isAvailable: true,
     actions: [
+      { label: `Call ${highest.name}`, type: 'START_CALL', payload: { leadId: highest.id } },
       { label: 'Review Walk-out Leads', type: 'NAVIGATE_VIEW', payload: { view: 'plan', tab: 'outgoing' } },
     ],
   };
@@ -498,11 +532,34 @@ export function handlePitchCoach(): AvaniResponse {
 
 export function handleAsmAgent(pulseMessages: Record<string, PulseMessage[]>): AvaniResponse {
   const escalations = pulseMessages?.['escalations'] || [];
-  const text = escalations.length > 0
-    ? `🚨 ASM Oversight Summary:\n` +
-      `Priya Iyer billing dispute (₹22,000) is under Area Sales Manager & Store Manager review.\n` +
-      `Directive from Sunita Rao: Hold all outbound calls to this lead until account reconciliation is completed.`
-    : `ASM Oversight: No active regional escalations requiring hold at this time.`;
+  if (escalations.length === 0) {
+    return {
+      id: `agent-asm-${Date.now()}`,
+      query: 'ASM Agent',
+      intent: 'escalations',
+      text: `ASM Oversight: No active regional escalations requiring hold at this time.`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isAvailable: true,
+    };
+  }
+
+  const cleaned = escalations.map((m) => ({
+    who: m.who,
+    time: m.time,
+    rawText: m.text.replace(/<[^>]+>/g, '').trim(),
+  }));
+
+  const issue = cleaned.find(
+    (m) => m.who.toLowerCase() === 'system' || m.rawText.toLowerCase().includes('escalation')
+  ) || cleaned[0];
+
+  const managerNote = cleaned.find((m) => m !== issue);
+  const issueDescription = issue.rawText.replace(/^[🔴🚨\s]*ESCALATION:\s*/i, '');
+
+  let text = `🚨 ASM Oversight Summary:\n${issueDescription}`;
+  if (managerNote) {
+    text += `\n\nManager Directive (${managerNote.who}): "${managerNote.rawText}"`;
+  }
 
   return {
     id: `agent-asm-${Date.now()}`,

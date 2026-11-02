@@ -99,7 +99,13 @@ interface AppContextType {
   acceptQueueCaller: (callerId: string) => void;
   // Pulse Channels & Messages
   pulseMessages: Record<string, PulseMessage[]>;
-  sendPulseMessage: (channelId: string, text: string) => PulseMessage;
+  sendPulseMessage: (
+    channelId: string,
+    text: string,
+    senderOverride?: Partial<PulseMessage>
+  ) => PulseMessage;
+  pinnedAnswers: Record<string, string>;
+  answerPinnedCard: (cardId: string, answer: string, channelId?: string) => void;
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
@@ -298,16 +304,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return map;
   });
 
-  const sendPulseMessage = (channelId: string, text: string): PulseMessage => {
+  const sendPulseMessage = (
+    channelId: string,
+    text: string,
+    senderOverride?: Partial<PulseMessage>
+  ): PulseMessage => {
     const newMessage: PulseMessage = {
       id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      who: 'Arvind Rajan',
-      initials: 'AR',
-      bg: '#e1f5ee',
-      color: '#0f6e56',
+      who: senderOverride?.who || 'Arvind Rajan',
+      initials: senderOverride?.initials || 'AR',
+      bg: senderOverride?.bg || '#e1f5ee',
+      color: senderOverride?.color || '#0f6e56',
       text: text.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isAgent: true,
+      time: senderOverride?.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isAgent: senderOverride?.isAgent !== undefined ? senderOverride.isAgent : true,
     };
 
     setPulseMessages((prev) => {
@@ -324,6 +334,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     return newMessage;
+  };
+
+  // Persistent Pinned Card Answers
+  const [pinnedAnswers, setPinnedAnswers] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('onground_pinned_answers');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to parse pinned answers from localStorage', e);
+    }
+    return {};
+  });
+
+  const answerPinnedCard = (cardId: string, answer: string, channelId?: string) => {
+    setPinnedAnswers((prev) => {
+      const next = { ...prev, [cardId]: answer };
+      try {
+        localStorage.setItem('onground_pinned_answers', JSON.stringify(next));
+      } catch (e) {
+        console.warn('Failed to persist pinned answers to localStorage', e);
+      }
+      return next;
+    });
+
+    if (channelId) {
+      sendPulseMessage(channelId, `@Sunita Rao ${answer}`);
+    }
   };
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -441,6 +478,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       dailyTasks, toggleTask,
       callQueue, acceptQueueCaller,
       pulseMessages, sendPulseMessage,
+      pinnedAnswers, answerPinnedCard,
       recordingConsent, setRecordingConsent,
       currentConsent, grantConsent, declineConsent, resetConsent,
       toastMessage, showToast,
