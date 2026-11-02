@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useState, useRef, type ReactNode } from 'react';
 import type { View, PlanTab, PulseView } from '../types';
 
 interface AppContextType {
@@ -24,6 +24,8 @@ interface AppContextType {
   setAudioOutput: (output: string) => void;
   avatarModalOpen: boolean;
   setAvatarModalOpen: (open: boolean) => void;
+  ogScoreModalOpen: boolean;
+  setOgScoreModalOpen: (open: boolean) => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   // Call state
@@ -54,11 +56,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
   const [callingLead, setCallingLead] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [ogScoreModalOpen, setOgScoreModalOpen] = useState(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = (msg: string) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage((current) => (current === msg ? null : current));
+    toastTimerRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimerRef.current = null;
     }, 3000);
   };
 
@@ -75,6 +83,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       incomingAlerts, setIncomingAlerts,
       audioOutput, setAudioOutput,
       avatarModalOpen, setAvatarModalOpen,
+      ogScoreModalOpen, setOgScoreModalOpen,
       sidebarCollapsed, setSidebarCollapsed,
       callState, setCallState,
       callingLead, setCallingLead,

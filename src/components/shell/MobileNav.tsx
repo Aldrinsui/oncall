@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   LayoutDashboard,
@@ -39,6 +39,17 @@ export default function MobileNav() {
     showToast,
   } = useApp();
   const [mobilePlanSheetOpen, setMobilePlanSheetOpen] = useState(false);
+
+  // Close sheet on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && mobilePlanSheetOpen) {
+        setMobilePlanSheetOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobilePlanSheetOpen]);
 
   const handleNavClick = (id: View) => {
     if (id === 'plan') {
