@@ -84,7 +84,37 @@ export interface RecentCall {
   value?: string;
   sopScore?: number;
   reviewItems?: SopReviewItem[];
+  consent?: ConsentRecord;
 }
+
+// ─── Persona Customization ──────────────────────────────────────
+export type SellingPersonaId = 'atlas' | 'nyra' | 'kairo' | 'zephyr' | 'onyx';
+
+export interface SellingPersona {
+  id: SellingPersonaId;
+  name: string;
+  title: string;
+  emoji: string;
+  ringColor: string;
+  bgLight: string;
+  badge: string;
+  style: string;
+  description: string;
+}
+
+// ─── Consent Compliance (DPDP) ──────────────────────────────────
+export type RecordingConsentState = 'pending' | 'granted' | 'declined';
+
+export interface ConsentRecord {
+  consentId: string;
+  status: RecordingConsentState;
+  method: 'voice' | 'wa';
+  timestamp: string;
+  phone?: string;
+  language?: string;
+  verifiedText?: string;
+}
+
 
 export interface IncomingCall {
   id: string;

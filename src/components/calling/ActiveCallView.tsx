@@ -14,12 +14,16 @@ import {
   Sparkles,
   PhoneCall,
   UserCheck,
+  ShieldCheck,
+  ShieldAlert,
+  AlertCircle,
 } from 'lucide-react';
 import AudioVisualizer from './AudioVisualizer';
 import LiveTranscript, { TranscriptLine } from './LiveTranscript';
 import AiAssistPanel from './AiAssistPanel';
 import CallWrapupModal from './CallWrapupModal';
 import CallSopReviewModal from '../modals/CallSopReviewModal';
+import RecordingConsentModal from './RecordingConsentModal';
 import { audioService } from '../../services/audioService';
 import { speechService } from '../../services/speechService';
 import { webrtcService, type WebRtcConnectionState } from '../../services/webrtcService';
@@ -33,7 +37,17 @@ export default function ActiveCallView() {
     activeCallTarget,
     showToast,
     addRecentCall,
+    recordingConsent,
+    setRecordingConsent,
+    currentConsent,
+    grantConsent,
+    declineConsent,
+    resetConsent,
   } = useApp();
+
+  // DPDP Consent Modal
+  const [consentModalOpen, setConsentModalOpen] = useState(false);
+
 
   // Call timer & hardware media controls state
   const [seconds, setSeconds] = useState(0);
@@ -150,6 +164,11 @@ export default function ActiveCallView() {
     if (callState === 'active') {
       audioService.playConnectChime();
 
+      // Trigger DPDP recording consent gate immediately if pending
+      if (recordingConsent === 'pending') {
+        setConsentModalOpen(true);
+      }
+
       // Start call timer (ticks only when not on hold)
       timer = window.setInterval(() => {
         if (!isOnHoldRef.current) {
@@ -157,14 +176,6 @@ export default function ActiveCallView() {
           setSeconds(secondsRef.current);
         }
       }, 1000);
-
-      // Start microphone analyser for live frequency canvas
-      speechService.startMicrophone().then((node) => {
-        if (node) {
-          setAnalyser(node);
-          setIsMicActive(true);
-        }
-      });
 
       // Initialize dialogue through Conversation State Machine
       const sm = stateMachineRef.current || new ConversationStateMachine(activeCallTarget);
@@ -191,10 +202,18 @@ export default function ActiveCallView() {
         transcriptLinesRef.current = [];
       }
 
-      // Listen for agent microphone speech
-      speechService.startSpeechRecognition((text) => {
-        handleAgentSpeech(text);
-      });
+      // ONLY start microphone analyser & STT if consent has already been granted
+      if (recordingConsent === 'granted') {
+        speechService.startMicrophone().then((node) => {
+          if (node) {
+            setAnalyser(node);
+            setIsMicActive(true);
+          }
+        });
+        speechService.startSpeechRecognition((text) => {
+          handleAgentSpeech(text);
+        });
+      }
     }
 
     return () => {
@@ -205,6 +224,29 @@ export default function ActiveCallView() {
       speechService.stopSpeaking();
     };
   }, [callState]);
+
+  // 4. Hardware Audio & STT Gating based on DPDP Consent
+  useEffect(() => {
+    if (callState !== 'active') return;
+
+    if (recordingConsent === 'granted') {
+      speechService.startMicrophone().then((node) => {
+        if (node) {
+          setAnalyser(node);
+          setIsMicActive(true);
+        }
+      });
+      speechService.startSpeechRecognition((text) => {
+        handleAgentSpeech(text);
+      });
+    } else if (recordingConsent === 'declined') {
+      speechService.stopMicrophone();
+      speechService.stopSpeechRecognition();
+      setIsMicActive(false);
+      setAnalyser(null);
+    }
+  }, [recordingConsent, callState]);
+
 
   // Handle agent speaking (either via physical microphone STT or quick stage prompt)
   const handleAgentSpeech = (text: string) => {
@@ -312,6 +354,12 @@ export default function ActiveCallView() {
   };
 
   const handleToggleMic = async () => {
+    if (recordingConsent !== 'granted') {
+      showToast('DPDP Compliance: Recording consent must be granted before capturing audio.');
+      setConsentModalOpen(true);
+      return;
+    }
+
     if (isMicActive) {
       speechService.stopMicrophone();
       speechService.stopSpeechRecognition();
@@ -333,6 +381,11 @@ export default function ActiveCallView() {
 
   // Start WebRTC Peer Calling between two tabs
   const handleStartWebRtcPeerCall = async () => {
+    if (recordingConsent !== 'granted') {
+      showToast('Recording consent required before starting WebRTC voice call.');
+      setConsentModalOpen(true);
+      return;
+    }
     let stream = speechService.getStream();
     if (!stream) {
       const node = await speechService.startMicrophone();
@@ -382,7 +435,9 @@ export default function ActiveCallView() {
     if (customerTimeoutRef.current) clearTimeout(customerTimeoutRef.current);
     setCallState('wrapup');
     setWrapupOpen(true);
+    setConsentModalOpen(false);
   };
+
 
   const handleSaveWrapup = (outcomeKey: string, notes: string) => {
     setWrapupOpen(false);
@@ -436,6 +491,7 @@ export default function ActiveCallView() {
       outcomeColor,
       value: activeCallTarget?.value || '₹8,490',
       sopScore: finalScore,
+      consent: currentConsent || undefined,
       reviewItems: [
         { criterion: 'Opening & Intent Confirm', passed: openingEval.passed, score: openingEval.score, evidence: openingEval.evidence },
         { criterion: 'Needs & Firmness Discovery', passed: discoveryEval.passed, score: discoveryEval.score, evidence: discoveryEval.evidence },
@@ -462,7 +518,9 @@ export default function ActiveCallView() {
     audioService.stopRinging();
     speechService.stopMicrophone();
     speechService.stopSpeaking();
+    resetConsent();
   };
+
 
   // Dynamic prompts matching current state machine stage
   const currentStagePrompts = stateMachineRef.current?.getStagePrompts() || [];
@@ -584,7 +642,7 @@ export default function ActiveCallView() {
               </div>
 
               <div>
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <h3 className="text-lg font-bold">{activeCallTarget?.name || 'Mukunda R.'}</h3>
                   <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full font-bold">
                     {activeCallTarget?.phone || '+91 98450 12345'}
@@ -595,7 +653,35 @@ export default function ActiveCallView() {
                       Peer WebRTC Live
                     </span>
                   )}
+
+                  {/* DPDP Recording Consent Status Badge */}
+                  {recordingConsent === 'granted' && (
+                    <span className="text-[10px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <ShieldCheck size={11} className="text-emerald-300" />
+                      <span>
+                        Rec Consent: {currentConsent?.consentId || 'CNS-2026-GRANTED'} ({currentConsent?.method === 'wa' ? 'WhatsApp' : 'Voice'})
+                      </span>
+                    </span>
+                  )}
+                  {recordingConsent === 'declined' && (
+                    <span className="text-[10px] bg-red-500/20 text-red-200 border border-red-400/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <ShieldAlert size={11} className="text-red-300" />
+                      <span>Recording Disabled (Consent Declined)</span>
+                    </span>
+                  )}
+                  {recordingConsent === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => setConsentModalOpen(true)}
+                      className="text-[10px] bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-300/40 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1 animate-pulse transition-colors cursor-pointer"
+                      title="DPDP compliance: Customer consent must be verified before recording"
+                    >
+                      <AlertCircle size={11} className="text-amber-300" />
+                      <span>Ask Consent (Pending)</span>
+                    </button>
+                  )}
                 </div>
+
 
                 <div className="flex items-center gap-3 text-xs text-emerald-200 mt-0.5">
                   <span className="font-mono text-base font-bold text-white tracking-wider">
@@ -703,6 +789,25 @@ export default function ActiveCallView() {
             </div>
           </div>
 
+          {/* Recording Declined Compliance Banner */}
+          {recordingConsent === 'declined' && (
+            <div className="bg-red-50 border border-red-200 text-red-900 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldAlert size={16} className="text-red-600 flex-shrink-0" />
+                <span>
+                  <strong>Recording Disabled:</strong> Customer opted out under DPDP regulations. Audio capture and speech transcription are suppressed.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConsentModalOpen(true)}
+                className="text-[11px] font-bold text-red-700 hover:text-red-900 underline ml-2 whitespace-nowrap cursor-pointer"
+              >
+                Re-request Consent
+              </button>
+            </div>
+          )}
+
           {/* Side-by-Side Active Screen: Transcript (Left) + AI Assist (Right) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className="lg:col-span-2">
@@ -743,9 +848,31 @@ export default function ActiveCallView() {
       {reviewOpen && (
         <CallSopReviewModal
           call={completedCallReview}
-          onClose={() => setReviewOpen(false)}
+          onClose={() => {
+            setReviewOpen(false);
+            resetConsent();
+          }}
         />
       )}
+
+      {/* ─── State 5: DPDP Recording Consent Gate Modal ──────────────── */}
+      {consentModalOpen && callState === 'active' && (
+        <RecordingConsentModal
+          callTarget={activeCallTarget}
+          onAgree={(method, phone, lang) => {
+            const rec = grantConsent(method, phone, lang);
+            setConsentModalOpen(false);
+            showToast(`Recording consent confirmed · ${rec.consentId}`);
+          }}
+          onRefuse={(method) => {
+            declineConsent(method);
+            setConsentModalOpen(false);
+            showToast('Customer declined recording. Call continuing unrecorded.');
+          }}
+          onClose={() => setConsentModalOpen(false)}
+        />
+      )}
+
     </div>
   );
 }

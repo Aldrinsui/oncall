@@ -88,6 +88,36 @@ export default function CallSopReviewModal({ call, onClose }: CallSopReviewModal
             <span className="text-og-gray-text text-[11px]">Audited by QA Agent & Sunita Rao</span>
           </div>
 
+          {/* DPDP Consent Audit Banner */}
+          {call.consent && (
+            <div className="mx-5 mt-4 p-3 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2.5">
+                <ShieldCheck
+                  size={16}
+                  className={call.consent.status === 'granted' ? 'text-emerald-600' : 'text-red-500'}
+                />
+                <div>
+                  <span className="font-bold text-gray-800">
+                    Recording Consent: {call.consent.status === 'granted' ? 'Granted ✓' : 'Declined ✕'}
+                  </span>
+                  <span className="text-gray-500 text-[11px] block mt-0.5">
+                    ID: {call.consent.consentId} • Method: {call.consent.method === 'wa' ? 'WhatsApp' : 'Voice'} • Verified {call.consent.timestamp}
+                  </span>
+                </div>
+              </div>
+              <span
+                className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                  call.consent.status === 'granted'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-red-100 text-red-800'
+                }`}
+              >
+                {call.consent.status}
+              </span>
+            </div>
+          )}
+
+
           {/* Criteria Breakdown */}
           <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
             <span className="text-xs font-bold text-og-forest uppercase tracking-wider block mb-1">

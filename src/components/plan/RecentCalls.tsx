@@ -8,7 +8,10 @@ import {
   Award,
   ChevronRight,
   FileCheck,
+  ShieldCheck,
+  ShieldAlert,
 } from 'lucide-react';
+
 import type { RecentCall } from '../../types';
 import CallSopReviewModal from '../modals/CallSopReviewModal';
 
@@ -104,12 +107,31 @@ export default function RecentCalls() {
                 {call.outcome}
               </span>
 
+              {call.consent && (
+                <div
+                  className={`flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full ${
+                    call.consent.status === 'granted'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}
+                  title={`DPDP Consent: ${call.consent.status} (${call.consent.method}) - ID: ${call.consent.consentId}`}
+                >
+                  {call.consent.status === 'granted' ? (
+                    <ShieldCheck size={11} className="text-emerald-600" />
+                  ) : (
+                    <ShieldAlert size={11} className="text-red-600" />
+                  )}
+                  <span>{call.consent.status === 'granted' ? 'Consent ✓' : 'Unrecorded'}</span>
+                </div>
+              )}
+
               {call.sopScore !== undefined && call.sopScore > 0 && (
                 <div className="flex items-center gap-1 bg-emerald-50 text-og-green font-bold text-xs px-2.5 py-1 rounded-full">
                   <Award size={13} />
                   <span>{call.sopScore}% SOP</span>
                 </div>
               )}
+
 
               <button
                 onClick={(e) => {

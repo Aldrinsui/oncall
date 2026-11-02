@@ -9,8 +9,10 @@ export default function Topbar() {
     notificationsOpen,
     setSettingsOpen,
     setAvatarModalOpen,
+    currentAvatar,
     showToast,
   } = useApp();
+
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const unreadCount = NOTIFICATIONS.filter((n) => n.needsAction).length;
@@ -84,12 +86,17 @@ export default function Topbar() {
         <div className="relative">
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="w-9 h-9 rounded-full bg-gradient-to-br from-og-green to-og-green-light flex items-center justify-center text-white text-sm font-bold shadow-md hover:shadow-lg transition-shadow"
-            aria-label="User profile menu"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md hover:shadow-lg transition-all ring-2 ring-white/20 hover:ring-white/40"
+            style={{
+              backgroundColor: currentAvatar.ringColor,
+              boxShadow: `0 2px 6px ${currentAvatar.ringColor}60`,
+            }}
+            title={`Selling Persona: ${currentAvatar.name} (${currentAvatar.title})`}
+            aria-label={`User profile menu. Current persona: ${currentAvatar.name}`}
             aria-expanded={dropdownOpen}
             aria-haspopup="true"
           >
-            {USER.emoji}
+            {currentAvatar.emoji}
           </button>
 
           {/* User dropdown */}
@@ -107,14 +114,35 @@ export default function Topbar() {
               >
                 {/* Header */}
                 <div className="p-4 border-b border-og-gray-border flex items-center gap-3 bg-gradient-to-br from-gray-50 to-white">
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-og-green to-og-green-light flex items-center justify-center text-lg shadow-sm">
-                    {USER.emoji}
+                  <div
+                    className="w-10 h-10 rounded-full flex items-center justify-center text-lg shadow-sm ring-2"
+                    style={{
+                      backgroundColor: currentAvatar.bgLight,
+                      borderColor: currentAvatar.ringColor,
+                    }}
+                  >
+                    {currentAvatar.emoji}
                   </div>
-                  <div>
-                    <div className="font-bold text-sm text-[#1c1c1e]">{USER.name}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-sm text-[#1c1c1e] truncate">{USER.name}</div>
                     <div className="text-xs text-og-gray-text">{USER.store} · {USER.brand}</div>
+                    <div className="flex items-center gap-1 mt-1">
+                      <span
+                        className="text-[10px] font-extrabold uppercase px-1.5 py-0.2 rounded-sm"
+                        style={{
+                          backgroundColor: `${currentAvatar.ringColor}20`,
+                          color: currentAvatar.ringColor,
+                        }}
+                      >
+                        {currentAvatar.name}
+                      </span>
+                      <span className="text-[10px] text-gray-500 truncate">
+                        {currentAvatar.badge}
+                      </span>
+                    </div>
                   </div>
                 </div>
+
 
                 {/* Menu items */}
                 <div className="py-1">

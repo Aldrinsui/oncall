@@ -2,7 +2,9 @@ import type {
   Lead, QueuedCaller, RecentCall, IncomingCall, WrapupOutcome,
   SopItem, CalendarInvite, PulseChannel, PulseThread, ChatMessage,
   Notification, KpiMetric, DailyTask, ChartDataPoint, AgentRole, BuyingSignal,
+  SellingPersona,
 } from '../types';
+
 
 // ─── Leads Data ─────────────────────────────────────────────────
 
@@ -486,6 +488,65 @@ export const AGENT_ROLES: AgentRole[] = [
   { id: 'asmagent', icon: '3️⃣', title: 'ASM Agent', sub: 'Area sales manager assistant', gradient: 'linear-gradient(135deg, #1a1a2e, #2d2d5f)' },
   { id: 'telecaller', icon: '4️⃣', title: 'Tele-caller', sub: 'Outbound call campaigns', gradient: 'linear-gradient(135deg, #4a154b, #6d28d9)' },
   { id: 'followup', icon: '5️⃣', title: 'Follow-up', sub: 'Nurture leads to close', gradient: 'linear-gradient(135deg, #185fa5, #2563eb)' },
+];
+
+// ─── 5 Selectable Selling Personas ─────────────────────────────
+export const SELLING_PERSONAS: SellingPersona[] = [
+  {
+    id: 'atlas',
+    name: 'Atlas',
+    title: 'The Closer',
+    emoji: '🦸‍♂️',
+    ringColor: '#1d9e75',
+    bgLight: '#e1f5ee',
+    badge: 'High Velocity',
+    style: 'Direct, confident, objection-crusher',
+    description: 'Fast-paced, assertive closing with instant objection handling and value anchoring.',
+  },
+  {
+    id: 'nyra',
+    name: 'Nyra',
+    title: 'The Consultant',
+    emoji: '🦸‍♀️',
+    ringColor: '#d97706',
+    bgLight: '#faeeda',
+    badge: 'Relationship Builder',
+    style: 'Empathetic, consultative, needs-focused',
+    description: 'Deep discovery, lifestyle-first questions, and high-trust advisory recommendations.',
+  },
+  {
+    id: 'kairo',
+    name: 'Kairo',
+    title: 'The Strategist',
+    emoji: '🦹‍♂️',
+    ringColor: '#2563eb',
+    bgLight: '#e8f0fe',
+    badge: 'Technical Specialist',
+    style: 'Product specs, data-driven, logical comparison',
+    description: 'Deep-dive into SmartGRID patented polymers, density metrics, and competitive tear-downs.',
+  },
+  {
+    id: 'zephyr',
+    name: 'Zephyr',
+    title: 'The Energizer',
+    emoji: '🦹‍♀️',
+    ringColor: '#9333ea',
+    bgLight: '#f3e8ff',
+    badge: 'High Empathy',
+    style: 'Warm, conversational, active listener',
+    description: 'Relatable storytelling, warm validation, and friendly bedside manner.',
+  },
+  {
+    id: 'onyx',
+    name: 'Onyx',
+    title: 'The Executive',
+    emoji: '🥷',
+    ringColor: '#475569',
+    bgLight: '#f1f5f9',
+    badge: 'Premium / VIP',
+    style: 'Authoritative, luxury consultative, white-glove',
+    description: 'Elevated tone tailored for premium buyers, zero-pressure posture, and VIP perks.',
+  },
 ];
 
 // ─── User Profile ───────────────────────────────────────────────
