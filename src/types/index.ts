@@ -1,6 +1,6 @@
 // ─── Navigation ─────────────────────────────────────────────────
 export type View = 'dashboard' | 'plan' | 'calendar' | 'pulse';
-export type PlanTab = 'outgoing' | 'incoming' | 'recent';
+export type PlanTab = 'outgoing' | 'incoming' | 'recent' | 'practise';
 export type PulseView = 'home' | 'channel';
 
 // ─── Leads ──────────────────────────────────────────────────────

@@ -16,13 +16,20 @@ interface AppContextType {
   setLeadsModalPage: (page: number) => void;
   notificationsOpen: boolean;
   setNotificationsOpen: (open: boolean) => void;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+  avatarModalOpen: boolean;
+  setAvatarModalOpen: (open: boolean) => void;
   sidebarCollapsed: boolean;
-  setSidebarCollapsed: (collapsed: boolean) => void;
+  setSidebarCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   // Call state
   callState: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review';
   setCallState: (s: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review') => void;
   callingLead: string | null;
   setCallingLead: (id: string | null) => void;
+  // Toast feedback
+  toastMessage: string | null;
+  showToast: (msg: string) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -35,9 +42,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [leadsModalOpen, setLeadsModalOpen] = useState(false);
   const [leadsModalPage, setLeadsModalPage] = useState(0);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
   const [callingLead, setCallingLead] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((current) => (current === msg ? null : current));
+    }, 3000);
+  };
 
   return (
     <AppContext.Provider value={{
@@ -48,9 +65,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       leadsModalOpen, setLeadsModalOpen,
       leadsModalPage, setLeadsModalPage,
       notificationsOpen, setNotificationsOpen,
+      settingsOpen, setSettingsOpen,
+      avatarModalOpen, setAvatarModalOpen,
       sidebarCollapsed, setSidebarCollapsed,
       callState, setCallState,
       callingLead, setCallingLead,
+      toastMessage, showToast,
     }}>
       {children}
     </AppContext.Provider>
