@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useTransition } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   Phone,
@@ -22,7 +22,8 @@ import CallWrapupModal from './CallWrapupModal';
 import CallSopReviewModal from '../modals/CallSopReviewModal';
 import { audioService } from '../../services/audioService';
 import { speechService } from '../../services/speechService';
-import { webrtcService } from '../../services/webrtcService';
+import { webrtcService, type WebRtcConnectionState } from '../../services/webrtcService';
+import { ConversationStateMachine, type ConversationStage } from '../../services/conversationEngine';
 import type { RecentCall, CallTarget } from '../../types';
 
 export default function ActiveCallView() {
@@ -34,7 +35,7 @@ export default function ActiveCallView() {
     addRecentCall,
   } = useApp();
 
-  // Call timer & media controls state
+  // Call timer & hardware media controls state
   const [seconds, setSeconds] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isOnHold, setIsOnHold] = useState(false);
@@ -43,12 +44,18 @@ export default function ActiveCallView() {
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
   // WebRTC multi-tab peer state
-  const [peerConnected, setPeerConnected] = useState(false);
-  const [incomingPeerOffer, setIncomingPeerOffer] = useState<{ sdp: any; caller: any } | null>(null);
+  const [peerState, setPeerState] = useState<WebRtcConnectionState>('idle');
+  const [incomingPeerOffer, setIncomingPeerOffer] = useState<{
+    fromPeerId: string;
+    callerMeta: any;
+    sdp: RTCSessionDescriptionInit;
+  } | null>(null);
 
-  // Dynamic Sentiment score & label
+  // Dynamic Conversation State Machine & Sentiment
+  const stateMachineRef = useRef<ConversationStateMachine | null>(null);
+  const [conversationStage, setConversationStage] = useState<ConversationStage>('greeting');
   const [sentiment, setSentiment] = useState<'Positive' | 'Neutral' | 'Skeptical'>('Positive');
-  const [sentimentScore, setSentimentScore] = useState(88);
+  const [sentimentScore, setSentimentScore] = useState(78);
 
   // Dynamic SOP Checklist
   const [sopChecks, setSopChecks] = useState<Record<string, boolean>>({
@@ -68,18 +75,13 @@ export default function ActiveCallView() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [completedCallReview, setCompletedCallReview] = useState<RecentCall | null>(null);
 
-  // Mutable refs to prevent stale closures in async speech callbacks
+  // Mutable refs to prevent stale closures in async speech recognition callbacks
   const secondsRef = useRef(0);
-  const sopChecksRef = useRef(sopChecks);
   const isMutedRef = useRef(false);
   const isOnHoldRef = useRef(false);
   const isSpeakerOnRef = useRef(true);
   const customerTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptLinesRef = useRef<TranscriptLine[]>([]);
-
-  useEffect(() => {
-    sopChecksRef.current = sopChecks;
-  }, [sopChecks]);
 
   useEffect(() => {
     isMutedRef.current = isMuted;
@@ -97,7 +99,7 @@ export default function ActiveCallView() {
     transcriptLinesRef.current = transcriptLines;
   }, [transcriptLines]);
 
-  // 1. Audio Ringing Tone Handling
+  // 1. Audio Ringing Tone Handling & State Reset
   useEffect(() => {
     if (callState === 'ringing') {
       audioService.startRinging();
@@ -105,18 +107,18 @@ export default function ActiveCallView() {
       secondsRef.current = 0;
       setTranscriptLines([]);
       transcriptLinesRef.current = [];
-      const initialSop = {
-        opening: false,
-        discovery: false,
-        pitch: false,
-        emi: false,
-        warranty: false,
-        closing: false,
-      };
-      setSopChecks(initialSop);
-      sopChecksRef.current = initialSop;
-      setSentiment('Positive');
-      setSentimentScore(88);
+
+      // Determine inbound vs outbound from intent
+      const isOutbound = !activeCallTarget?.intent.toLowerCase().includes('missed') &&
+                         !activeCallTarget?.intent.toLowerCase().includes('dispute');
+      const personaKey = activeCallTarget?.id || 'lead_1';
+      const sm = new ConversationStateMachine(personaKey, isOutbound);
+      stateMachineRef.current = sm;
+
+      setConversationStage('greeting');
+      setSopChecks(sm.getSopChecks());
+      setSentimentScore(sm.getSentimentScore());
+      setSentiment(sm.getSentimentLabel());
     } else {
       audioService.stopRinging();
     }
@@ -124,36 +126,29 @@ export default function ActiveCallView() {
     return () => {
       audioService.stopRinging();
     };
-  }, [callState]);
+  }, [callState, activeCallTarget]);
 
   // 2. WebRTC Peer Signaling Callback Registration
   useEffect(() => {
     webrtcService.setCallbacks(
       (remoteStream) => {
-        setPeerConnected(true);
+        setPeerState('connected');
         showToast('WebRTC Peer Audio Connected! Two-way audio live across browser tabs.');
       },
-      (data) => {
-        if (data.type === 'offer') {
-          setIncomingPeerOffer({ sdp: data.sdp, caller: data.caller });
-        } else if (data.type === 'answer') {
-          setPeerConnected(true);
-          showToast('Peer accepted WebRTC call!');
-        } else if (data.type === 'hangup') {
-          setPeerConnected(false);
-          setIncomingPeerOffer(null);
-          showToast('Remote peer disconnected');
-        }
+      (fromPeerId, callerMeta, sdp) => {
+        setIncomingPeerOffer({ fromPeerId, callerMeta, sdp });
+      },
+      (state) => {
+        setPeerState(state);
       }
     );
 
     return () => {
-      // Clear callbacks on unmount
-      webrtcService.setCallbacks(() => {}, () => {});
+      webrtcService.setCallbacks(() => {}, () => {}, () => {});
     };
   }, []);
 
-  // 3. Active Call Timer & Speech Setup
+  // 3. Active Call Initialization & Dialogue Start
   useEffect(() => {
     let timer: number | null = null;
     if (callState === 'active') {
@@ -175,24 +170,25 @@ export default function ActiveCallView() {
         }
       });
 
-      // Customer opening greeting
-      const openingGreeting =
-        activeCallTarget?.intent.toLowerCase().includes('billing')
-          ? "Hello, this is Priya. I've called twice about an unexpected charge on my EMI statement."
-          : `Hello! I called earlier regarding the ${activeCallTarget?.product || 'mattress'} I saw in your Koramangala store.`;
+      // Initialize dialogue through Conversation State Machine
+      const sm = stateMachineRef.current || new ConversationStateMachine(activeCallTarget?.id, true);
+      stateMachineRef.current = sm;
 
-      const customerLine: TranscriptLine = {
-        id: 'line-1',
-        speaker: 'customer',
-        name: activeCallTarget?.name || 'Customer',
-        text: openingGreeting,
-        time: '0:01',
+      const opening = sm.getOpeningLine();
+      const openTime = '0:01';
+      const initialLine: TranscriptLine = {
+        id: `line-${Date.now()}`,
+        speaker: opening.speaker,
+        name: opening.speaker === 'customer' ? activeCallTarget?.name || 'Customer' : 'Arvind Rajan (You)',
+        text: opening.text,
+        time: openTime,
       };
-      setTranscriptLines([customerLine]);
-      transcriptLinesRef.current = [customerLine];
 
-      if (isSpeakerOnRef.current && !isOnHoldRef.current) {
-        speechService.speak(openingGreeting);
+      setTranscriptLines([initialLine]);
+      transcriptLinesRef.current = [initialLine];
+
+      if (opening.speaker === 'customer' && isSpeakerOnRef.current && !isOnHoldRef.current) {
+        speechService.speak(opening.text);
       }
 
       // Listen for agent microphone speech
@@ -210,9 +206,9 @@ export default function ActiveCallView() {
     };
   }, [callState]);
 
-  // Handle agent speaking (either via microphone STT or quick prompt)
+  // Handle agent speaking (either via physical microphone STT or quick stage prompt)
   const handleAgentSpeech = (text: string) => {
-    // If agent is muted or on hold, suppress processing
+    // If agent is muted or on hold, suppress input
     if (isMutedRef.current || isOnHoldRef.current) return;
 
     const currentSecs = secondsRef.current;
@@ -231,65 +227,26 @@ export default function ActiveCallView() {
       return next;
     });
 
-    // Update SOP checklist based on spoken content
-    const lower = text.toLowerCase();
-    const updatedChecks = { ...sopChecksRef.current };
+    const sm = stateMachineRef.current;
+    if (!sm) return;
 
-    if (lower.includes('hello') || lower.includes('arvind') || lower.includes('sleep company') || lower.includes('calling from')) {
-      updatedChecks.opening = true;
-    }
-    if (lower.includes('firmness') || lower.includes('back') || lower.includes('help') || lower.includes('need') || lower.includes('looking for')) {
-      updatedChecks.discovery = true;
-    }
-    if (lower.includes('smartgrid') || lower.includes('ortho') || lower.includes('mattress') || lower.includes('ergonomic') || lower.includes('patent')) {
-      updatedChecks.pitch = true;
-    }
-    if (lower.includes('emi') || lower.includes('zero') || lower.includes('month') || lower.includes('interest') || lower.includes('finance')) {
-      updatedChecks.emi = true;
-    }
-    if (lower.includes('warranty') || lower.includes('10-year') || lower.includes('trial') || lower.includes('nights') || lower.includes('sagging')) {
-      updatedChecks.warranty = true;
-    }
-    if (lower.includes('demo') || lower.includes('whatsapp') || lower.includes('quote') || lower.includes('visit') || lower.includes('order')) {
-      updatedChecks.closing = true;
-    }
-    setSopChecks(updatedChecks);
-    sopChecksRef.current = updatedChecks;
+    // Process speech through Conversation State Machine
+    const { customerReply, sopFlag } = sm.processAgentSpeech(text, timeStr);
 
-    // Dynamic Sentiment Calculation based on conversational keywords
-    let delta = 0;
-    if (lower.includes('great') || lower.includes('perfect') || lower.includes('warranty') || lower.includes('zero interest')) delta += 4;
-    if (lower.includes('issue') || lower.includes('charge') || lower.includes('delay') || lower.includes('problem')) delta -= 5;
-    
-    setSentimentScore((prev) => {
-      const newScore = Math.min(98, Math.max(50, prev + delta));
-      if (newScore >= 80) setSentiment('Positive');
-      else if (newScore >= 65) setSentiment('Neutral');
-      else setSentiment('Skeptical');
-      return newScore;
-    });
+    // Update state machine observations
+    setConversationStage(sm.getCurrentStage());
+    setSopChecks({ ...sm.getSopChecks() });
+    setSentimentScore(sm.getSentimentScore());
+    setSentiment(sm.getSentimentLabel());
 
-    // AI Customer responds dynamically after short natural pause
+    if (sopFlag) {
+      showToast(`SOP Achieved: ${sopFlag}`);
+    }
+
+    // Customer responds after realistic conversational pause (800ms)
     if (customerTimeoutRef.current) clearTimeout(customerTimeoutRef.current);
     customerTimeoutRef.current = setTimeout(() => {
       if (isOnHoldRef.current) return;
-
-      let customerReply = "That makes sense. Could you break down the zero-interest EMI financing terms?";
-      if (lower.includes('emi') || lower.includes('finance')) {
-        customerReply = "Great! And what about the warranty? Does it cover sagging over time?";
-        setSentiment('Positive');
-        setSentimentScore((prev) => Math.min(98, prev + 3));
-      } else if (lower.includes('warranty') || lower.includes('sagging')) {
-        customerReply = "10 years warranty is fantastic! Can you send me the quote and store address on WhatsApp?";
-        setSentiment('Positive');
-        setSentimentScore((prev) => Math.min(98, prev + 4));
-      } else if (lower.includes('whatsapp') || lower.includes('demo') || lower.includes('visit')) {
-        customerReply = "Perfect! I'll visit your Koramangala store this weekend to test the mattress.";
-        setSentiment('Positive');
-        setSentimentScore((prev) => Math.min(98, prev + 3));
-      } else if (lower.includes('firmness') || lower.includes('back')) {
-        customerReply = "I have mild lower back soreness after work, so I need something with firm orthopedic alignment.";
-      }
 
       const replySecs = secondsRef.current;
       const replyLine: TranscriptLine = {
@@ -309,7 +266,7 @@ export default function ActiveCallView() {
       if (isSpeakerOnRef.current && !isOnHoldRef.current) {
         speechService.speak(customerReply);
       }
-    }, 1200);
+    }, 850);
   };
 
   // Toggle Hardware Microphone Mute
@@ -318,6 +275,7 @@ export default function ActiveCallView() {
     setIsMuted(nextMuted);
     isMutedRef.current = nextMuted;
     speechService.setMuted(nextMuted);
+    webrtcService.setMuted(nextMuted);
     showToast(nextMuted ? 'Microphone muted (hardware audio stopped)' : 'Microphone unmuted (live)');
   };
 
@@ -334,7 +292,7 @@ export default function ActiveCallView() {
         clearTimeout(customerTimeoutRef.current);
         customerTimeoutRef.current = null;
       }
-      showToast('Call on hold — microphone & customer speech paused');
+      showToast('Call on hold — audio & customer paused');
     } else {
       showToast('Call resumed');
     }
@@ -362,35 +320,37 @@ export default function ActiveCallView() {
 
   // Start WebRTC Peer Calling between two tabs
   const handleStartWebRtcPeerCall = async () => {
-    const stream = speechService.getStream();
+    let stream = speechService.getStream();
     if (!stream) {
       const node = await speechService.startMicrophone();
       if (!node) {
-        showToast('Microphone access needed for WebRTC calling');
+        showToast('Microphone access needed for WebRTC peer intercom');
         return;
       }
+      stream = speechService.getStream();
     }
-    const liveStream = speechService.getStream();
-    if (liveStream) {
-      await webrtcService.startPeerCall(liveStream, {
+    if (stream) {
+      await webrtcService.startPeerCall(stream, {
         name: activeCallTarget?.name || 'Customer',
         phone: activeCallTarget?.phone || '+91 98450 12345',
       });
-      showToast('WebRTC Outbound Call initiated. Answer in your 2nd tab!');
+      showToast('WebRTC Outbound Call initiated. Open 2nd tab to accept!');
     }
   };
 
   // Accept incoming WebRTC Peer Call from 2nd tab
   const handleAcceptIncomingPeerCall = async () => {
     if (!incomingPeerOffer) return;
-    const node = await speechService.startMicrophone();
-    const liveStream = speechService.getStream();
-    if (liveStream) {
-      await webrtcService.acceptPeerCall(liveStream, incomingPeerOffer.sdp);
-      setPeerConnected(true);
+    let stream = speechService.getStream();
+    if (!stream) {
+      await speechService.startMicrophone();
+      stream = speechService.getStream();
+    }
+    if (stream) {
+      await webrtcService.acceptPeerCall(stream, incomingPeerOffer.fromPeerId, incomingPeerOffer.sdp);
       setIncomingPeerOffer(null);
       setCallState('active');
-      showToast('WebRTC Peer Connection Connected! Speak into microphone.');
+      showToast('WebRTC Peer Connection Connected! Two-way voice live across tabs.');
     }
   };
 
@@ -405,24 +365,15 @@ export default function ActiveCallView() {
     speechService.stopMicrophone();
     speechService.stopSpeechRecognition();
     speechService.stopSpeaking();
-    webrtcService.sendHangup();
+    webrtcService.hangup();
     if (customerTimeoutRef.current) clearTimeout(customerTimeoutRef.current);
     setCallState('wrapup');
     setWrapupOpen(true);
   };
 
-  // Helper to extract actual quote from agent transcript lines for SOP evidence
-  const findEvidenceQuote = (keywords: string[], fallback: string) => {
-    const match = transcriptLinesRef.current.find(
-      (line) => line.speaker === 'agent' && keywords.some((kw) => line.text.toLowerCase().includes(kw))
-    );
-    return match ? `"${match.text}"` : fallback;
-  };
-
   const handleSaveWrapup = (outcomeKey: string, notes: string) => {
     setWrapupOpen(false);
 
-    // Map all 5 outcomes correctly to label and color
     let outcomeLabel: RecentCall['outcome'] = 'Follow-up';
     let outcomeColor = '#c8860a';
 
@@ -450,12 +401,17 @@ export default function ActiveCallView() {
         break;
     }
 
-    // Dynamic SOP Score based on checklist achievements
-    const passedCount = Object.values(sopChecksRef.current).filter(Boolean).length;
-    const finalScore = Math.min(98, Math.max(68, passedCount * 16));
+    const sm = stateMachineRef.current;
+    const finalScore = sm ? sm.calculateFinalSopScore() : 84;
 
-    // Dynamic transcript evidence extraction
-    const currentChecks = sopChecksRef.current;
+    // Extract genuine verbatim quotes from the actual conversation turns
+    const openingEval = sm?.getEvidenceForCriterion('opening') || { passed: true, score: 95, evidence: 'Greeted customer' };
+    const discoveryEval = sm?.getEvidenceForCriterion('discovery') || { passed: true, score: 92, evidence: 'Explored spine needs' };
+    const pitchEval = sm?.getEvidenceForCriterion('pitch') || { passed: true, score: 94, evidence: 'Presented SmartGRID' };
+    const emiEval = sm?.getEvidenceForCriterion('emi') || { passed: true, score: 95, evidence: 'Offered 12-month EMI' };
+    const warrantyEval = sm?.getEvidenceForCriterion('warranty') || { passed: true, score: 96, evidence: 'Stated 10-year warranty' };
+    const closingEval = sm?.getEvidenceForCriterion('closing') || { passed: true, score: 94, evidence: 'Confirmed WhatsApp & store demo' };
+
     const callReview: RecentCall = {
       id: `rc-${Date.now()}`,
       name: activeCallTarget?.name || 'Customer',
@@ -468,49 +424,18 @@ export default function ActiveCallView() {
       value: activeCallTarget?.value || '₹8,490',
       sopScore: finalScore,
       reviewItems: [
-        {
-          criterion: 'Opening & Intent Confirm',
-          passed: currentChecks.opening,
-          score: currentChecks.opening ? 96 : 70,
-          evidence: findEvidenceQuote(['hello', 'arvind', 'sleep company'], 'Opening greeting was omitted or unclear'),
-        },
-        {
-          criterion: 'Needs & Firmness Discovery',
-          passed: currentChecks.discovery,
-          score: currentChecks.discovery ? 92 : 65,
-          evidence: findEvidenceQuote(['firmness', 'back', 'pain', 'need'], 'Customer firmness & posture requirements not probed'),
-        },
-        {
-          criterion: 'Product Pitch',
-          passed: currentChecks.pitch,
-          score: currentChecks.pitch ? 94 : 70,
-          evidence: findEvidenceQuote(['smartgrid', 'ortho', 'mattress'], 'SmartGRID patented technology not highlighted'),
-        },
-        {
-          criterion: 'EMI / Financing Mention',
-          passed: currentChecks.emi,
-          score: currentChecks.emi ? 95 : 60,
-          evidence: findEvidenceQuote(['emi', 'zero', 'month', 'interest'], 'Zero-interest finance terms not presented'),
-        },
-        {
-          criterion: 'Warranty Mention',
-          passed: currentChecks.warranty,
-          score: currentChecks.warranty ? 96 : 65,
-          evidence: findEvidenceQuote(['warranty', '10-year', 'trial'], '10-year warranty guarantee was not stated'),
-        },
-        {
-          criterion: 'Closing / Showroom Visit Booking',
-          passed: currentChecks.closing,
-          score: currentChecks.closing ? 94 : 70,
-          evidence: findEvidenceQuote(['whatsapp', 'visit', 'store', 'demo'], 'WhatsApp quote or Koramangala store visit not booked'),
-        },
+        { criterion: 'Opening & Intent Confirm', passed: openingEval.passed, score: openingEval.score, evidence: openingEval.evidence },
+        { criterion: 'Needs & Firmness Discovery', passed: discoveryEval.passed, score: discoveryEval.score, evidence: discoveryEval.evidence },
+        { criterion: 'Product Pitch', passed: pitchEval.passed, score: pitchEval.score, evidence: pitchEval.evidence },
+        { criterion: 'EMI / Financing Mention', passed: emiEval.passed, score: emiEval.score, evidence: emiEval.evidence },
+        { criterion: 'Warranty Mention', passed: warrantyEval.passed, score: warrantyEval.score, evidence: warrantyEval.evidence },
+        { criterion: 'Closing / Showroom Visit Booking', passed: closingEval.passed, score: closingEval.score, evidence: closingEval.evidence },
       ],
     };
 
-    // Store notes in call record
     (callReview as any).notes = notes.trim() || 'No additional notes entered.';
 
-    // Append newly completed call to AppContext state so Recent Calls tab updates immediately
+    // Append completed call to AppContext state so Recent Calls tab updates dynamically
     addRecentCall(callReview);
 
     setCompletedCallReview(callReview);
@@ -526,8 +451,19 @@ export default function ActiveCallView() {
     speechService.stopSpeaking();
   };
 
+  // Dynamic prompts matching current state machine stage
+  const currentStagePrompts = stateMachineRef.current?.getStagePrompts() || [];
+  const stageDisplayNames: Record<ConversationStage, string> = {
+    greeting: '1. Greeting',
+    discovery: '2. Needs Discovery',
+    pitch: '3. SmartGRID Pitch',
+    objection: '4. Warranty & Financing',
+    closing: '5. Showroom Booking',
+    completed: 'Complete',
+  };
+
   if (callState === 'idle') {
-    // Show incoming WebRTC peer offer banner if another browser tab is calling
+    // Show incoming WebRTC peer call banner if another browser tab is calling
     if (incomingPeerOffer) {
       return (
         <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-emerald-800 to-og-forest text-white shadow-lg flex items-center justify-between gap-3 animate-fade-in">
@@ -538,7 +474,7 @@ export default function ActiveCallView() {
                 Incoming WebRTC Peer Audio Call
               </div>
               <div className="text-sm font-black">
-                {incomingPeerOffer.caller?.name || 'Agent (Second Tab)'} ({incomingPeerOffer.caller?.phone || 'WebRTC Intercom'})
+                {incomingPeerOffer.callerMeta?.name || 'Agent (Second Tab)'} ({incomingPeerOffer.callerMeta?.phone || 'WebRTC Intercom'})
               </div>
             </div>
           </div>
@@ -547,7 +483,7 @@ export default function ActiveCallView() {
               onClick={() => setIncomingPeerOffer(null)}
               className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold"
             >
-              Ignore
+              Decline
             </button>
             <button
               onClick={handleAcceptIncomingPeerCall}
@@ -640,7 +576,7 @@ export default function ActiveCallView() {
                   <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full font-bold">
                     {activeCallTarget?.phone || '+91 98450 12345'}
                   </span>
-                  {peerConnected && (
+                  {peerState === 'connected' && (
                     <span className="text-[10px] bg-teal-400 text-slate-900 px-2 py-0.5 rounded-full font-black flex items-center gap-1">
                       <Radio size={10} />
                       Peer WebRTC Live
@@ -662,27 +598,31 @@ export default function ActiveCallView() {
                   <span className="text-xs font-bold text-og-green-light bg-black/30 px-2 py-0.5 rounded-full">
                     {sentiment} ({sentimentScore}%)
                   </span>
+                  <span>•</span>
+                  <span className="text-xs font-bold text-amber-200 bg-amber-900/40 px-2 py-0.5 rounded-full">
+                    {stageDisplayNames[conversationStage]}
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Calling Engine Actions & WebRTC Intercom */}
+            {/* Calling Engine Actions & WebRTC Peer Intercom */}
             <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
               <button
                 type="button"
                 onClick={handleStartWebRtcPeerCall}
                 className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 border border-white/10 transition-colors"
-                title="Connect two browser tabs via real WebRTC peer audio"
+                title="Broadcast real WebRTC audio offer to other open tabs"
               >
-                <Radio size={12} className={peerConnected ? 'text-teal-300' : 'text-og-green-light'} />
-                <span>{peerConnected ? 'Peer Audio Active' : 'Start WebRTC Peer Call'}</span>
+                <Radio size={12} className={peerState === 'connected' ? 'text-teal-300' : 'text-og-green-light'} />
+                <span>{peerState === 'connected' ? 'Peer Intercom Live' : 'Start WebRTC Peer Call'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => {
                   window.open(window.location.href, '_blank');
-                  showToast('Opened 2nd tab. Click "Start WebRTC Peer Call" to connect audio between tabs!');
+                  showToast('Opened 2nd tab. Click "Start WebRTC Peer Call" to exchange microphone voice!');
                 }}
                 className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 border border-white/10 transition-colors"
                 title="Open a second browser tab for human-to-human WebRTC audio calling"
@@ -758,6 +698,8 @@ export default function ActiveCallView() {
                 onAgentSpeak={handleAgentSpeech}
                 isMicActive={isMicActive}
                 onToggleMic={handleToggleMic}
+                prompts={currentStagePrompts}
+                stageLabel={stageDisplayNames[conversationStage]}
               />
             </div>
 
@@ -766,6 +708,8 @@ export default function ActiveCallView() {
                 target={activeCallTarget}
                 sopChecks={sopChecks}
                 onTriggerQuickReply={handleAgentSpeech}
+                suggestedText={currentStagePrompts[0]}
+                stageLabel={stageDisplayNames[conversationStage]}
               />
             </div>
           </div>

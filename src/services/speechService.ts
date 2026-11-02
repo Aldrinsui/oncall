@@ -30,6 +30,12 @@ export class SpeechService {
     }
   }
 
+  private isSpeakingAloud = false;
+
+  getIsSpeakingAloud(): boolean {
+    return this.isSpeakingAloud;
+  }
+
   // 1. Speak aloud customer dialogue using SpeechSynthesis
   speak(text: string, onEnd?: () => void) {
     if (!this.synth) {
@@ -38,6 +44,8 @@ export class SpeechService {
     }
 
     this.synth.cancel(); // Stop any pending utterances
+    this.isSpeakingAloud = true;
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
@@ -54,10 +62,16 @@ export class SpeechService {
       utterance.voice = naturalVoice;
     }
 
-    if (onEnd) {
-      utterance.onend = () => onEnd();
-      utterance.onerror = () => onEnd();
-    }
+    const handleEnd = () => {
+      // 300ms room acoustic decay delay before re-enabling agent mic transcription
+      setTimeout(() => {
+        this.isSpeakingAloud = false;
+      }, 300);
+      if (onEnd) onEnd();
+    };
+
+    utterance.onend = handleEnd;
+    utterance.onerror = handleEnd;
 
     this.synth.speak(utterance);
   }
@@ -66,6 +80,7 @@ export class SpeechService {
     if (this.synth) {
       this.synth.cancel();
     }
+    this.isSpeakingAloud = false;
   }
 
   // 2. Start microphone capture with Web Audio Analyser for live visualizer
@@ -127,6 +142,9 @@ export class SpeechService {
     try {
       this.isListening = true;
       this.recognition.onresult = (event: any) => {
+        // Prevent microphone from transcribing the customer's synthesized voice
+        if (this.isSpeakingAloud) return;
+
         let finalTranscript = '';
         for (let i = event.resultIndex; i < event.results.length; i++) {
           if (event.results[i].isFinal) {

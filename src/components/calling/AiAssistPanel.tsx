@@ -6,12 +6,16 @@ interface AiAssistPanelProps {
   target: CallTarget | null;
   sopChecks: Record<string, boolean>;
   onTriggerQuickReply: (text: string) => void;
+  suggestedText?: string;
+  stageLabel?: string;
 }
 
 export default function AiAssistPanel({
   target,
   sopChecks,
   onTriggerQuickReply,
+  suggestedText,
+  stageLabel,
 }: AiAssistPanelProps) {
   const sopList = [
     { key: 'opening', label: 'Opening & Intent Confirm' },
@@ -29,6 +33,11 @@ export default function AiAssistPanel({
     { label: 'Offer Demo Visit', text: 'I can reserve a private firmness test demo for you at our Koramangala store this afternoon.' },
   ];
 
+  const currentSuggestion =
+    suggestedText ||
+    target?.personaChallenge ||
+    'Acknowledge customer interest, validate their spine support needs, and introduce the 12-month zero-interest EMI plan.';
+
   return (
     <div className="bg-white rounded-2xl border border-og-gray-border overflow-hidden shadow-md flex flex-col h-[460px]">
       {/* Header with Purple Gradient matching Mock */}
@@ -45,7 +54,7 @@ export default function AiAssistPanel({
           </div>
         </div>
         <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-bold">
-          Live Grounding
+          {stageLabel ? `Stage: ${stageLabel}` : 'Live Grounding'}
         </span>
       </div>
 
@@ -62,16 +71,12 @@ export default function AiAssistPanel({
           </div>
 
           <p className="text-[#1c1c1e] font-medium leading-relaxed">
-            {target?.personaChallenge ||
-              'Acknowledge customer interest, validate their spine support needs, and introduce the 12-month zero-interest EMI plan.'}
+            {currentSuggestion}
           </p>
 
           <button
-            onClick={() =>
-              onTriggerQuickReply(
-                'We have an exclusive 12-month zero-cost EMI starting today, plus a 10-year warranty with 100 nights risk-free trial!'
-              )
-            }
+            type="button"
+            onClick={() => onTriggerQuickReply(currentSuggestion)}
             className="w-full py-1.5 bg-og-purple-mid hover:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-xs"
           >
             <span>Speak Suggested Pitch</span>

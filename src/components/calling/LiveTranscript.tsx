@@ -14,6 +14,8 @@ interface LiveTranscriptProps {
   onAgentSpeak: (text: string) => void;
   isMicActive: boolean;
   onToggleMic: () => void;
+  prompts?: string[];
+  stageLabel?: string;
 }
 
 export default function LiveTranscript({
@@ -21,6 +23,8 @@ export default function LiveTranscript({
   onAgentSpeak,
   isMicActive,
   onToggleMic,
+  prompts,
+  stageLabel,
 }: LiveTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +43,7 @@ export default function LiveTranscript({
     }
   };
 
-  const quickPrompts = [
+  const activePrompts = prompts && prompts.length > 0 ? prompts : [
     'Hello! Arvind from The Sleep Company Koramangala. How can I help you today?',
     'We offer a 12-month zero-interest EMI on the Ortho GRID mattress.',
     'It comes with an exclusive 10-year warranty and a 100-night trial.',
@@ -111,19 +115,21 @@ export default function LiveTranscript({
         )}
       </div>
 
-      {/* Quick Prompts Strip */}
+      {/* Stage-Aware Contextual Prompts Strip */}
       <div className="p-2 bg-og-night-mid/70 border-t border-og-night-border flex items-center gap-1.5 overflow-x-auto text-[11px]">
         <span className="text-gray-400 font-bold px-1 flex-shrink-0 flex items-center gap-1">
           <Sparkles size={11} className="text-og-green" />
-          SOP Prompts:
+          {stageLabel ? `${stageLabel} Prompts:` : 'SOP Prompts:'}
         </span>
-        {quickPrompts.map((p, idx) => (
+        {activePrompts.map((p, idx) => (
           <button
             key={idx}
+            type="button"
             onClick={() => onAgentSpeak(p)}
             className="bg-white/10 hover:bg-og-green/30 hover:border-og-green text-gray-200 px-2.5 py-1 rounded-lg border border-white/5 whitespace-nowrap transition-colors flex-shrink-0"
+            title={p}
           >
-            {p.length > 36 ? p.slice(0, 36) + '...' : p}
+            {p.length > 40 ? p.slice(0, 40) + '...' : p}
           </button>
         ))}
       </div>
