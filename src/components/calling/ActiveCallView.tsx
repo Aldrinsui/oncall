@@ -371,6 +371,33 @@ export default function ActiveCallView() {
               </div>
             </div>
 
+            {/* Calling Engine Mode & Diagnostics Strip */}
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              <button
+                onClick={() => {
+                  window.open(window.location.href, '_blank');
+                  showToast('Opened 2nd tab for Human-to-Human WebRTC Peer Calling');
+                }}
+                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 border border-white/10 transition-colors"
+                title="Open a second browser tab to demonstrate human-to-human WebRTC audio calling"
+              >
+                <Radio size={12} className="text-og-green-light" />
+                <span>WebRTC 2-Tab Peer Mode</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  speechService.startMicrophone();
+                  showToast('Audio Loopback Diagnostic active: speak to test mic input & waveform');
+                }}
+                className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 border border-white/10 transition-colors"
+                title="Test microphone frequency analyser in local loopback"
+              >
+                <Mic size={12} className="text-amber-300" />
+                <span>Mic Loopback Test</span>
+              </button>
+            </div>
+
             {/* Audio Waveform + In-Call Controls */}
             <div className="flex items-center gap-3 self-center sm:self-auto flex-wrap">
               <AudioVisualizer analyser={analyser} isActive={!isOnHold} />
