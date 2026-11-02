@@ -160,12 +160,41 @@ export class SpeechService {
     return true;
   }
 
+  private shouldBeListening = false;
+  private onErrorCallback: ((error: string) => void) | null = null;
+  private onStatusCallback: ((status: 'listening' | 'idle' | 'error') => void) | null = null;
+  private onResultCallback: ((text: string) => void) | null = null;
+
+  isSpeechRecognitionSupported(): boolean {
+    return !!this.recognition;
+  }
+
+  getIsListening(): boolean {
+    return this.isListening;
+  }
+
   // 3. Start live speech recognition for agent voice with validation & confidence filter
-  startSpeechRecognition(onResult: (text: string) => void) {
-    if (!this.recognition || this.isListening) return;
+  startSpeechRecognition(
+    onResult: (text: string) => void,
+    onError?: (error: string) => void,
+    onStatusChange?: (status: 'listening' | 'idle' | 'error') => void
+  ) {
+    if (!this.recognition) {
+      if (onError) onError('Web Speech API is not supported in this browser. Please use Google Chrome.');
+      return;
+    }
+
+    this.onResultCallback = onResult;
+    this.onErrorCallback = onError || null;
+    this.onStatusCallback = onStatusChange || null;
+    this.shouldBeListening = true;
+
+    if (this.isListening) return;
 
     try {
       this.isListening = true;
+      if (this.onStatusCallback) this.onStatusCallback('listening');
+
       this.recognition.onresult = (event: any) => {
         // Prevent microphone from transcribing the customer's synthesized voice or acoustic room decay
         if (this.isSpeakingAloud || Date.now() - this.lastSpeakingEndTime < 400) {
@@ -196,26 +225,69 @@ export class SpeechService {
           }
           this.lastProcessedText = cleaned;
           this.lastProcessedTime = now;
-          onResult(cleaned);
+          if (this.onResultCallback) this.onResultCallback(cleaned);
         }
       };
 
       this.recognition.onerror = (e: any) => {
-        console.warn('Speech recognition error/ended:', e);
+        console.warn('SpeechRecognition error:', e.error, e);
         this.isListening = false;
+        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+          this.shouldBeListening = false;
+          if (this.onErrorCallback) {
+            this.onErrorCallback('Microphone permission denied for speech recognition.');
+          }
+        } else if (e.error === 'no-speech') {
+          // Normal pause in speech, don't disarm session
+        } else if (e.error === 'audio-capture') {
+          if (this.onErrorCallback) {
+            this.onErrorCallback('No microphone hardware detected.');
+          }
+        } else if (e.error === 'network') {
+          if (this.onErrorCallback) {
+            this.onErrorCallback('Speech recognition network error. Reconnecting...');
+          }
+        }
+        if (this.onStatusCallback) this.onStatusCallback('error');
       };
 
       this.recognition.onend = () => {
         this.isListening = false;
+        // Auto-restart if call is still active and recognition was not intentionally stopped
+        if (this.shouldBeListening) {
+          setTimeout(() => {
+            if (this.shouldBeListening && !this.isListening && this.recognition) {
+              try {
+                this.recognition.start();
+                this.isListening = true;
+                if (this.onStatusCallback) this.onStatusCallback('listening');
+              } catch (err) {
+                this.isListening = false;
+              }
+            }
+          }, 300);
+        } else {
+          if (this.onStatusCallback) this.onStatusCallback('idle');
+        }
       };
 
       this.recognition.start();
     } catch (e) {
       this.isListening = false;
+      console.warn('Failed to start SpeechRecognition:', e);
+      if (this.onErrorCallback) {
+        this.onErrorCallback('Unable to initialize browser speech recognition engine.');
+      }
+      if (this.onStatusCallback) this.onStatusCallback('error');
     }
   }
 
   stopSpeechRecognition() {
+    this.shouldBeListening = false;
+    this.onResultCallback = null;
+    this.onErrorCallback = null;
+    this.onStatusCallback = null;
+
     if (this.recognition && this.isListening) {
       try {
         this.recognition.stop();
@@ -223,6 +295,7 @@ export class SpeechService {
       this.isListening = false;
     }
   }
+
 }
 
 export const speechService = new SpeechService();

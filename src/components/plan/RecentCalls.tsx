@@ -121,7 +121,14 @@ export default function RecentCalls() {
                   ) : (
                     <ShieldAlert size={11} className="text-red-600" />
                   )}
-                  <span>{call.consent.status === 'granted' ? 'Consent ✓' : 'Unrecorded'}</span>
+                  <span>
+                    {call.consent.status === 'granted'
+                      ? call.consent.isMinor
+                        ? 'Parent Consent ✓'
+                        : 'Consent ✓'
+                      : 'Unrecorded'}
+                  </span>
+
                 </div>
               )}
 

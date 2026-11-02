@@ -98,12 +98,15 @@ export default function CallSopReviewModal({ call, onClose }: CallSopReviewModal
                 />
                 <div>
                   <span className="font-bold text-gray-800">
-                    Recording Consent: {call.consent.status === 'granted' ? 'Granted ✓' : 'Declined ✕'}
+                    {call.consent.isMinor ? 'Parent/Guardian Recording Consent:' : 'Recording Consent:'}{' '}
+                    {call.consent.status === 'granted' ? 'Granted ✓' : 'Declined ✕'}
                   </span>
                   <span className="text-gray-500 text-[11px] block mt-0.5">
                     ID: {call.consent.consentId} • Method: {call.consent.method === 'wa' ? 'WhatsApp' : 'Voice'} • Verified {call.consent.timestamp}
+                    {call.consent.isMinor && call.consent.guardianPhone ? ` • Guardian: +91 ${call.consent.guardianPhone}` : ''}
                   </span>
                 </div>
+
               </div>
               <span
                 className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${

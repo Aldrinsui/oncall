@@ -56,13 +56,24 @@ interface AppContextType {
   recordingConsent: RecordingConsentState;
   setRecordingConsent: (s: RecordingConsentState) => void;
   currentConsent: ConsentRecord | null;
-  grantConsent: (method: 'voice' | 'wa', phone?: string, lang?: string) => ConsentRecord;
-  declineConsent: (method?: 'voice' | 'wa') => void;
+  grantConsent: (
+    method: 'voice' | 'wa',
+    phone?: string,
+    lang?: string,
+    isMinor?: boolean,
+    guardianPhone?: string
+  ) => ConsentRecord;
+  declineConsent: (
+    method?: 'voice' | 'wa',
+    isMinor?: boolean,
+    guardianPhone?: string
+  ) => void;
   resetConsent: () => void;
   // Toast feedback
   toastMessage: string | null;
   showToast: (msg: string) => void;
 }
+
 
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -108,7 +119,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [recordingConsent, setRecordingConsent] = useState<RecordingConsentState>('pending');
   const [currentConsent, setCurrentConsent] = useState<ConsentRecord | null>(null);
 
-  const grantConsent = (method: 'voice' | 'wa', phone?: string, lang?: string): ConsentRecord => {
+  const grantConsent = (
+    method: 'voice' | 'wa',
+    phone?: string,
+    lang?: string,
+    isMinor?: boolean,
+    guardianPhone?: string
+  ): ConsentRecord => {
     const consentId = `CNS-2026-${Math.floor(100000 + Math.random() * 900000)}`;
     const record: ConsentRecord = {
       consentId,
@@ -117,29 +134,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       phone,
       language: lang,
-      verifiedText:
-        method === 'wa'
-          ? 'Customer tapped Yes on WhatsApp consent link'
-          : 'Customer gave verbal consent out loud',
+      isMinor: !!isMinor,
+      guardianPhone: isMinor ? guardianPhone : undefined,
+      guardianConsent: !!isMinor,
+      verifiedText: isMinor
+        ? method === 'wa'
+          ? `Parent/Guardian tapped Yes on WhatsApp consent link sent to +91 ${guardianPhone || phone}`
+          : 'Parent/Guardian gave verbal recording consent out loud'
+        : method === 'wa'
+        ? 'Customer tapped Yes on WhatsApp consent link'
+        : 'Customer gave verbal consent out loud',
     };
     setRecordingConsent('granted');
     setCurrentConsent(record);
     return record;
   };
 
-  const declineConsent = (method: 'voice' | 'wa' = 'voice') => {
+  const declineConsent = (
+    method: 'voice' | 'wa' = 'voice',
+    isMinor?: boolean,
+    guardianPhone?: string
+  ) => {
     const consentId = `CNS-REF-${Math.floor(100000 + Math.random() * 900000)}`;
     const record: ConsentRecord = {
       consentId,
       status: 'declined',
       method,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      verifiedText:
-        method === 'wa' ? 'Customer tapped No on WhatsApp' : 'Customer verbally declined recording',
+      isMinor: !!isMinor,
+      guardianPhone: isMinor ? guardianPhone : undefined,
+      guardianConsent: false,
+      verifiedText: isMinor
+        ? method === 'wa'
+          ? 'Parent/Guardian tapped No on WhatsApp'
+          : 'Parent/Guardian verbally declined recording'
+        : method === 'wa'
+        ? 'Customer tapped No on WhatsApp'
+        : 'Customer verbally declined recording',
     };
     setRecordingConsent('declined');
     setCurrentConsent(record);
   };
+
 
   const resetConsent = () => {
     setRecordingConsent('pending');

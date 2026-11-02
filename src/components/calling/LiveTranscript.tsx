@@ -16,6 +16,9 @@ interface LiveTranscriptProps {
   onToggleMic: () => void;
   prompts?: string[];
   stageLabel?: string;
+  isSttActive?: boolean;
+  sttError?: string | null;
+  sttSupported?: boolean;
 }
 
 export default function LiveTranscript({
@@ -25,7 +28,11 @@ export default function LiveTranscript({
   onToggleMic,
   prompts,
   stageLabel,
+  isSttActive = false,
+  sttError = null,
+  sttSupported = true,
 }: LiveTranscriptProps) {
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -53,27 +60,70 @@ export default function LiveTranscript({
   return (
     <div className="bg-og-night rounded-2xl border border-og-night-border overflow-hidden flex flex-col h-[460px] shadow-lg">
       {/* Header */}
-      <div className="p-3 px-4 bg-og-night-mid border-b border-og-night-border flex items-center justify-between">
+      <div className="p-3 px-4 bg-og-night-mid border-b border-og-night-border flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-og-green animate-pulse-dot" />
           <span className="text-xs font-bold text-white uppercase tracking-wider">
             Live Call Audio Transcript
           </span>
+
+          {/* Explicit Speech-to-Text Engine Status Badge */}
+          {isSttActive && (
+            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+              <span>STT Transcribing</span>
+            </span>
+          )}
+          {!isSttActive && isMicActive && !sttError && (
+            <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-bold">
+              Mic Audio Live
+            </span>
+          )}
+          {sttError && (
+            <span
+              className="text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 px-2 py-0.5 rounded-full font-bold truncate max-w-[200px]"
+              title={sttError}
+            >
+              STT: {sttError}
+            </span>
+          )}
+          {!sttSupported && (
+            <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold">
+              STT: Chrome Web Speech Recommended
+            </span>
+          )}
         </div>
 
         <button
           onClick={onToggleMic}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
-            isMicActive
+            isSttActive
               ? 'bg-og-green text-white shadow-xs'
+              : isMicActive
+              ? 'bg-blue-600 text-white'
               : 'bg-white/10 text-gray-300 hover:bg-white/20'
           }`}
-          title="Toggle microphone for live speech-to-text"
+          title="Toggle microphone capture & SpeechRecognition"
         >
           <Mic size={13} className={isMicActive ? 'animate-pulse' : undefined} />
-          <span>{isMicActive ? 'Mic Active' : 'Enable Mic'}</span>
+          <span>{isSttActive ? 'Mic + STT Active' : isMicActive ? 'Mic Live' : 'Enable Mic'}</span>
         </button>
       </div>
+
+      {/* STT Error Banner */}
+      {sttError && (
+        <div className="bg-red-950/80 border-b border-red-800/60 px-4 py-1.5 text-[11px] text-red-200 flex items-center justify-between">
+          <span>
+            <strong>Speech Recognition Notice:</strong> {sttError}
+          </span>
+          <button
+            onClick={onToggleMic}
+            className="text-[10px] underline hover:text-white font-bold ml-2 cursor-pointer"
+          >
+            Retry Recognition
+          </button>
+        </div>
+      )}
 
       {/* Transcript Scroll Area */}
       <div
@@ -84,10 +134,15 @@ export default function LiveTranscript({
           <div className="h-full flex items-center justify-center text-center text-gray-400">
             <div>
               <Volume2 size={24} className="mx-auto mb-2 text-gray-500 animate-bounce" />
-              <p>Call connected. Speak into your microphone or select an SOP prompt below.</p>
+              <p className="font-medium text-gray-300">
+                {isSttActive
+                  ? 'Listening for your voice... Speak clearly or tap an SOP prompt below.'
+                  : 'Call connected. Enable microphone or select an SOP prompt below.'}
+              </p>
             </div>
           </div>
         ) : (
+
           lines.map((line) => (
             <div
               key={line.id}

@@ -7,15 +7,25 @@ import {
   MessageSquare,
   Mic,
   AlertCircle,
-  Smartphone,
-  PhoneCall,
+  ExternalLink,
+  Users,
 } from 'lucide-react';
 import type { CallTarget } from '../../types';
 
 interface RecordingConsentModalProps {
   callTarget: CallTarget | null;
-  onAgree: (method: 'voice' | 'wa', phone?: string, lang?: string) => void;
-  onRefuse: (method?: 'voice' | 'wa') => void;
+  onAgree: (
+    method: 'voice' | 'wa',
+    phone?: string,
+    lang?: string,
+    isMinor?: boolean,
+    guardianPhone?: string
+  ) => void;
+  onRefuse: (
+    method?: 'voice' | 'wa',
+    isMinor?: boolean,
+    guardianPhone?: string
+  ) => void;
   onClose: () => void;
 }
 
@@ -33,10 +43,12 @@ export default function RecordingConsentModal({
   const [phone, setPhone] = useState<string>(() => {
     return (callTarget?.phone || '').replace(/\D/g, '').slice(-10) || '9845012345';
   });
+  const [guardianPhone, setGuardianPhone] = useState<string>('');
+  const [isMinor, setIsMinor] = useState(false);
   const [waSent, setWaSent] = useState(false);
   const [phoneError, setPhoneError] = useState('');
 
-  // Localized compliance scripts
+  // Localized compliance scripts matching mock
   const scripts: Record<ConsentLang, { title: string; script: string; reassure: string }> = {
     kn: {
       title: 'ಕನ್ನಡ (Kannada)',
@@ -58,10 +70,16 @@ export default function RecordingConsentModal({
     },
   };
 
+  const activePhone = isMinor && guardianPhone ? guardianPhone : phone;
+
   const handleSendWhatsApp = () => {
-    const cleaned = phone.replace(/\D/g, '');
+    const cleaned = activePhone.replace(/\D/g, '');
     if (cleaned.length !== 10) {
-      setPhoneError('Please enter a valid 10-digit mobile number.');
+      setPhoneError(
+        isMinor
+          ? 'Enter a valid 10-digit parent/guardian mobile number.'
+          : 'Enter a valid 10-digit customer mobile number.'
+      );
       return;
     }
     setPhoneError('');
@@ -69,16 +87,26 @@ export default function RecordingConsentModal({
   };
 
   const handleVoiceYes = () => {
-    onAgree('voice', phone, lang);
+    onAgree('voice', activePhone, lang, isMinor, isMinor ? guardianPhone || phone : undefined);
+  };
+
+  const handleVoiceNo = () => {
+    onRefuse('voice', isMinor, isMinor ? guardianPhone || phone : undefined);
   };
 
   const handleWaReply = (agreed: boolean) => {
     if (agreed) {
-      onAgree('wa', phone, lang);
+      onAgree('wa', activePhone, lang, isMinor, isMinor ? guardianPhone || phone : undefined);
     } else {
-      onRefuse('wa');
+      onRefuse('wa', isMinor, isMinor ? guardianPhone || phone : undefined);
     }
   };
+
+  // Real WhatsApp Web / App delivery link
+  const waComplianceMessage = `Namaste from The Sleep Company. Under DPDP compliance regulations, may we have consent to record this call for service quality and follow-up?\n\nPlease reply *YES* to agree or *NO* to opt-out.`;
+  const realWaUrl = `https://wa.me/91${activePhone.replace(/\D/g, '')}?text=${encodeURIComponent(
+    waComplianceMessage
+  )}`;
 
   return (
     <div
@@ -106,7 +134,8 @@ export default function RecordingConsentModal({
                   Ask before you record
                 </h3>
                 <p className="text-[11px] text-gray-500 mt-0.5">
-                  Call Centre · {callTarget?.name || 'Customer'}
+                  Call Centre · {callTarget?.name || 'Customer'}{' '}
+                  {isMinor && <span className="text-blue-800 font-bold">(Minor / Under 18)</span>}
                 </p>
               </div>
             </div>
@@ -205,6 +234,65 @@ export default function RecordingConsentModal({
                 </button>
               </div>
 
+              {/* Under-18 / Minor Toggle Button (Matching Mock toggle) */}
+              <div className="mb-3 p-2.5 rounded-xl border border-blue-100 bg-blue-50/50 flex items-center justify-between">
+                <div>
+                  <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                    <Users size={14} className="text-blue-900" />
+                    <span>Under 18?</span>
+                  </span>
+                  <p className="text-[11px] text-gray-600 mt-0.5">
+                    {mode === 'wa'
+                      ? "Send it to a parent's number instead."
+                      : 'A parent or guardian must say yes.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isMinor}
+                  onClick={() => {
+                    setIsMinor(!isMinor);
+                    setWaSent(false);
+                    setPhoneError('');
+                  }}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    isMinor ? 'bg-[#1e3a8a]' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
+                      isMinor ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Parent Phone input if Minor */}
+              {isMinor && (
+                <div className="mb-3 p-2.5 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
+                  <label className="text-[11px] font-bold text-blue-950 block">
+                    Parent / Guardian's Mobile Number (Mandatory)
+                  </label>
+                  <div className="flex gap-2">
+                    <span className="flex items-center px-2.5 bg-white border border-blue-200 rounded-lg text-gray-500 font-semibold text-xs">
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      value={guardianPhone}
+                      onChange={(e) => setGuardianPhone(e.target.value)}
+                      placeholder="Parent's 10-digit number"
+                      className="flex-1 px-3 py-1.5 bg-white border border-blue-300 rounded-lg text-xs font-semibold text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                      maxLength={10}
+                    />
+                  </div>
+                  <p className="text-[10px] text-blue-800">
+                    Consent will be registered under guardian verification.
+                  </p>
+                </div>
+              )}
+
               {/* Tab 1: Voice Verbal Confirmation */}
               {mode === 'voice' && (
                 <div className="space-y-2.5">
@@ -215,19 +303,21 @@ export default function RecordingConsentModal({
                       className="p-2.5 bg-og-forest hover:bg-og-forest/90 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all"
                     >
                       <Check size={16} strokeWidth={2.5} />
-                      <span>They said yes</span>
+                      <span>{isMinor ? 'Parent said yes' : 'They said yes'}</span>
                     </button>
                     <button
                       type="button"
-                      onClick={() => onRefuse('voice')}
+                      onClick={handleVoiceNo}
                       className="p-2.5 border border-gray-300 hover:bg-gray-50 text-gray-700 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all"
                     >
                       <X size={16} strokeWidth={2.5} />
-                      <span>They said no</span>
+                      <span>{isMinor ? 'Parent said no' : 'They said no'}</span>
                     </button>
                   </div>
                   <p className="text-[11px] text-gray-500 text-center">
-                    Customer's verbal confirmation generates a timestamped Consent ID.
+                    {isMinor
+                      ? 'Parent or guardian spoken consent is saved as verified proof.'
+                      : "Customer's spoken yes is saved as a verified timestamp proof."}
                   </p>
                 </div>
               )}
@@ -243,9 +333,12 @@ export default function RecordingConsentModal({
                         </div>
                         <input
                           type="tel"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
-                          placeholder="10-digit number"
+                          value={activePhone}
+                          onChange={(e) => {
+                            if (isMinor) setGuardianPhone(e.target.value);
+                            else setPhone(e.target.value);
+                          }}
+                          placeholder={isMinor ? "Parent's 10-digit number" : '10-digit number'}
                           className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-og-green"
                           maxLength={10}
                         />
@@ -264,18 +357,34 @@ export default function RecordingConsentModal({
                         </p>
                       )}
                       <p className="text-[11px] text-gray-500 mt-1.5">
-                        They receive the compliance text via WhatsApp and tap Yes or No.
+                        {isMinor
+                          ? "Parent receives compliance message on WhatsApp and taps Yes or No."
+                          : 'They receive the compliance text via WhatsApp and tap Yes or No.'}
                       </p>
                     </div>
                   ) : (
                     <div className="space-y-2.5">
                       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                        <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
-                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                          <span>Sent to +91 {phone}</span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-amber-900 font-bold text-xs">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                            <span>Sent to +91 {activePhone}</span>
+                          </div>
+
+                          {/* Real WhatsApp Web/App launcher */}
+                          <a
+                            href={realWaUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 hover:text-emerald-950 underline bg-emerald-100/60 px-2 py-0.5 rounded"
+                            title="Open prefilled WhatsApp message in WhatsApp Web/App"
+                          >
+                            <span>Open in WhatsApp</span>
+                            <ExternalLink size={10} />
+                          </a>
                         </div>
-                        <p className="text-[11.5px] text-amber-800 mt-1 leading-normal">
-                          Say: “I've sent the consent confirmation to your WhatsApp. Just tap Yes or No.” Recording stays off until consented.
+                        <p className="text-[11.5px] text-amber-800 mt-1.5 leading-normal">
+                          Say: “I've sent the consent confirmation to your {isMinor ? "parent's " : ''}WhatsApp. Just tap Yes or No.” Recording stays off until consented.
                         </p>
                       </div>
 
@@ -283,30 +392,32 @@ export default function RecordingConsentModal({
                       <div className="bg-gray-50 border border-gray-200 p-2.5 rounded-xl flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
                           <span className="px-1.5 py-0.5 bg-amber-400 text-amber-950 rounded text-[9px] font-black">
-                            DEMO
+                            SIMULATE TAP
                           </span>
-                          <span className="text-[11px] text-gray-600 font-medium">Customer taps:</span>
+                          <span className="text-[11px] text-gray-600 font-medium">
+                            {isMinor ? 'Parent taps:' : 'Customer taps:'}
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={() => handleWaReply(true)}
-                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold shadow-xs transition-colors"
+                            className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
                           >
                             Yes
                           </button>
                           <button
                             type="button"
                             onClick={() => handleWaReply(false)}
-                            className="px-3 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md text-[11px] font-bold transition-colors"
+                            className="px-3 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-md text-[11px] font-bold transition-colors cursor-pointer"
                           >
                             No
                           </button>
                           <button
                             type="button"
                             onClick={() => setWaSent(false)}
-                            className="text-[10px] text-og-green hover:underline ml-1 font-semibold"
+                            className="text-[10px] text-og-green hover:underline ml-1 font-semibold cursor-pointer"
                           >
                             Change
                           </button>
@@ -321,7 +432,7 @@ export default function RecordingConsentModal({
 
           {/* Footer Note */}
           <div className="bg-gray-50 p-3 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-            <span>DPDP Compliance 2026</span>
+            <span>DPDP Compliance 2026 {isMinor ? '· Sec 9 Minor Guard' : ''}</span>
             <span>A "No" logs refusal & continues unrecorded</span>
           </div>
         </div>

@@ -113,7 +113,11 @@ export interface ConsentRecord {
   phone?: string;
   language?: string;
   verifiedText?: string;
+  isMinor?: boolean;
+  guardianPhone?: string;
+  guardianConsent?: boolean;
 }
+
 
 
 export interface IncomingCall {

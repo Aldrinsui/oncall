@@ -55,7 +55,11 @@ export default function ActiveCallView() {
   const [isOnHold, setIsOnHold] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [isMicActive, setIsMicActive] = useState(false);
+  const [isSttActive, setIsSttActive] = useState(false);
+  const [sttError, setSttError] = useState<string | null>(null);
   const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+  const sttSupported = typeof window !== 'undefined' && speechService.isSpeechRecognitionSupported();
+
 
   // WebRTC multi-tab peer state
   const [peerState, setPeerState] = useState<WebRtcConnectionState>('idle');
@@ -210,9 +214,17 @@ export default function ActiveCallView() {
             setIsMicActive(true);
           }
         });
-        speechService.startSpeechRecognition((text) => {
-          handleAgentSpeech(text);
-        });
+        speechService.startSpeechRecognition(
+          (text) => handleAgentSpeech(text),
+          (err) => {
+            setSttError(err);
+            showToast(err);
+          },
+          (status) => {
+            setIsSttActive(status === 'listening');
+            if (status === 'listening') setSttError(null);
+          }
+        );
       }
     }
 
@@ -236,16 +248,26 @@ export default function ActiveCallView() {
           setIsMicActive(true);
         }
       });
-      speechService.startSpeechRecognition((text) => {
-        handleAgentSpeech(text);
-      });
+      speechService.startSpeechRecognition(
+        (text) => handleAgentSpeech(text),
+        (err) => {
+          setSttError(err);
+          showToast(err);
+        },
+        (status) => {
+          setIsSttActive(status === 'listening');
+          if (status === 'listening') setSttError(null);
+        }
+      );
     } else if (recordingConsent === 'declined') {
       speechService.stopMicrophone();
       speechService.stopSpeechRecognition();
       setIsMicActive(false);
+      setIsSttActive(false);
       setAnalyser(null);
     }
   }, [recordingConsent, callState]);
+
 
 
   // Handle agent speaking (either via physical microphone STT or quick stage prompt)
@@ -364,20 +386,32 @@ export default function ActiveCallView() {
       speechService.stopMicrophone();
       speechService.stopSpeechRecognition();
       setIsMicActive(false);
+      setIsSttActive(false);
       setAnalyser(null);
-      showToast('Microphone disabled');
+      showToast('Microphone & speech recognition paused');
     } else {
       const node = await speechService.startMicrophone();
       if (node) {
         setAnalyser(node);
         setIsMicActive(true);
-        speechService.startSpeechRecognition((text) => handleAgentSpeech(text));
+        speechService.startSpeechRecognition(
+          (text) => handleAgentSpeech(text),
+          (err) => {
+            setSttError(err);
+            showToast(err);
+          },
+          (status) => {
+            setIsSttActive(status === 'listening');
+            if (status === 'listening') setSttError(null);
+          }
+        );
         showToast('Microphone live — speak to converse with customer');
       } else {
         showToast('Microphone permission required. Use quick prompts below.');
       }
     }
   };
+
 
   // Start WebRTC Peer Calling between two tabs
   const handleStartWebRtcPeerCall = async () => {
@@ -818,7 +852,11 @@ export default function ActiveCallView() {
                 onToggleMic={handleToggleMic}
                 prompts={currentStagePrompts}
                 stageLabel={stageDisplayNames[conversationStage]}
+                isSttActive={isSttActive}
+                sttError={sttError}
+                sttSupported={sttSupported}
               />
+
             </div>
 
             <div>
@@ -859,19 +897,28 @@ export default function ActiveCallView() {
       {consentModalOpen && callState === 'active' && (
         <RecordingConsentModal
           callTarget={activeCallTarget}
-          onAgree={(method, phone, lang) => {
-            const rec = grantConsent(method, phone, lang);
+          onAgree={(method, phone, lang, isMinor, guardianPhone) => {
+            const rec = grantConsent(method, phone, lang, isMinor, guardianPhone);
             setConsentModalOpen(false);
-            showToast(`Recording consent confirmed · ${rec.consentId}`);
+            showToast(
+              isMinor
+                ? `Parent/Guardian consent confirmed · ${rec.consentId}`
+                : `Recording consent confirmed · ${rec.consentId}`
+            );
           }}
-          onRefuse={(method) => {
-            declineConsent(method);
+          onRefuse={(method, isMinor, guardianPhone) => {
+            declineConsent(method, isMinor, guardianPhone);
             setConsentModalOpen(false);
-            showToast('Customer declined recording. Call continuing unrecorded.');
+            showToast(
+              isMinor
+                ? 'Parent/Guardian declined recording. Continuing unrecorded.'
+                : 'Customer declined recording. Continuing unrecorded.'
+            );
           }}
           onClose={() => setConsentModalOpen(false)}
         />
       )}
+
 
     </div>
   );
