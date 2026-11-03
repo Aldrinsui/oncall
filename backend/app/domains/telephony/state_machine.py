@@ -16,7 +16,12 @@ class CallStateMachine:
 
     PERMITTED_TRANSITIONS: Dict[CallStatus, Set[CallStatus]] = {
         CallStatus.QUEUED: {CallStatus.INITIATING, CallStatus.CANCELLED},
-        CallStatus.INITIATING: {CallStatus.AGENT_RINGING, CallStatus.FAILED, CallStatus.CANCELLED},
+        CallStatus.INITIATING: {
+            CallStatus.AGENT_RINGING,
+            CallStatus.CUSTOMER_RINGING,
+            CallStatus.FAILED,
+            CallStatus.CANCELLED,
+        },
         CallStatus.AGENT_RINGING: {
             CallStatus.CUSTOMER_RINGING,
             CallStatus.BUSY,

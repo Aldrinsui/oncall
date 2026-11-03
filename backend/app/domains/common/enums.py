@@ -52,6 +52,8 @@ class CallEventType(str, Enum):
     CALL_BUSY = "CALL_BUSY"
     CALL_NO_ANSWER = "CALL_NO_ANSWER"
     CALL_CANCELLED = "CALL_CANCELLED"
+    LEG_BUSY = "CALL_BUSY"
+    LEG_NO_ANSWER = "CALL_NO_ANSWER"
 
 class TaskStatus(str, Enum):
     PENDING = "PENDING"

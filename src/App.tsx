@@ -7,6 +7,7 @@ import SettingsModal from './components/modals/SettingsModal';
 import AvatarModal from './components/modals/AvatarModal';
 import OgScoreModal from './components/modals/OgScoreModal';
 import LeadsModal from './components/modals/LeadsModal';
+import PstnDialpadModal from './components/calling/PstnDialpadModal';
 import Dashboard from './components/dashboard/Dashboard';
 import Planner from './components/plan/Planner';
 import Calendar from './components/calendar/Calendar';
@@ -53,6 +54,7 @@ function AppContent() {
         <AvatarModal />
         <OgScoreModal />
         <LeadsModal />
+        <PstnDialpadModal />
 
         {/* Global Toast Notification */}
         {toastMessage && (

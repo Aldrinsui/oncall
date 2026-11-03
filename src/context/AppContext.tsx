@@ -27,6 +27,12 @@ import {
   type ConversionMetrics,
   type EarningsBreakdown,
 } from '../services/dashboardService';
+import {
+  initiateOutboundCall,
+  fetchCallStatus,
+  terminateCall,
+  type CallDto,
+} from '../services/telephonyApi';
 
 interface AppContextType {
   activeView: View;
@@ -65,6 +71,12 @@ interface AppContextType {
   setCallingLead: (id: string | null) => void;
   activeCallTarget: CallTarget | null;
   setActiveCallTarget: (target: CallTarget | null) => void;
+  backendCallId: string | null;
+  backendCallStatus: string | null;
+  backendCallDetails: CallDto | null;
+  telephonyError: string | null;
+  dialpadModalOpen: boolean;
+  setDialpadModalOpen: (open: boolean) => void;
   startCall: (target: CallTarget) => void;
   endCall: () => void;
   recentCalls: RecentCall[];
@@ -378,16 +390,107 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }, 3000);
   };
 
-  const startCall = (target: CallTarget) => {
+  const [backendCallId, setBackendCallId] = useState<string | null>(null);
+  const [backendCallStatus, setBackendCallStatus] = useState<string | null>(null);
+  const [backendCallDetails, setBackendCallDetails] = useState<CallDto | null>(null);
+  const [telephonyError, setTelephonyError] = useState<string | null>(null);
+  const [dialpadModalOpen, setDialpadModalOpen] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearCallPolling = () => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  const startCall = async (target: CallTarget) => {
+    clearCallPolling();
     setActiveCallTarget(target);
     setCallingLead(target.id);
     setActiveView('plan');
     setCallState('ringing');
+    setBackendCallId(null);
+    setBackendCallStatus(null);
+    setBackendCallDetails(null);
+    setTelephonyError(null);
     resetConsent(); // Always re-arm consent gate on new call
     showToast(`Calling ${target.name} (${target.phone})...`);
+
+    // Format phone to E.164 standard (+91 country code for Indian numbers)
+    let cleanPhone = (target.phone || '').replace(/[\s\-\(\)]/g, '');
+    if (cleanPhone && !cleanPhone.startsWith('+')) {
+      if (cleanPhone.length === 10) {
+        cleanPhone = `+91${cleanPhone}`;
+      } else if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+        cleanPhone = `+${cleanPhone}`;
+      } else {
+        cleanPhone = `+91${cleanPhone}`;
+      }
+    }
+
+    if (cleanPhone && cleanPhone.startsWith('+')) {
+      try {
+        const isUuid = target.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.id);
+        const callDto = await initiateOutboundCall({
+          customerPhone: cleanPhone,
+          customerName: target.name,
+          notes: target.intent || 'Real outbound PSTN call from OnGround portal',
+          leadId: isUuid ? target.id : undefined,
+        });
+
+        setBackendCallId(callDto.id);
+        setBackendCallStatus(callDto.status);
+        setBackendCallDetails(callDto);
+        const leg = callDto.legs?.[0];
+        const providerName = leg?.provider?.toUpperCase() || 'PSTN';
+        showToast(`Real ${providerName} PSTN call ringing on ${cleanPhone} (Call ID: ${callDto.id.slice(0, 8)})`);
+
+        // Start polling provider status every 1.5 seconds
+        pollTimerRef.current = setInterval(async () => {
+          try {
+            const updated = await fetchCallStatus(callDto.id);
+            setBackendCallStatus(updated.status);
+            setBackendCallDetails(updated);
+
+            if (updated.status === 'CONNECTED') {
+              setCallState('active');
+            } else if (updated.status === 'WRAPUP' || updated.status === 'COMPLETED') {
+              clearCallPolling();
+              setCallState('wrapup');
+            } else if (
+              updated.status === 'BUSY' ||
+              updated.status === 'NO_ANSWER' ||
+              updated.status === 'FAILED' ||
+              updated.status === 'CANCELLED'
+            ) {
+              clearCallPolling();
+              showToast(`PSTN call ended: ${updated.status}`);
+              setCallState('wrapup');
+            }
+          } catch (pollErr) {
+            console.warn('Call status poll warning:', pollErr);
+          }
+        }, 1500);
+
+      } catch (err: any) {
+        const msg = err?.message || 'Telephony provider connection failed';
+        console.warn('Real PSTN calling dispatch note:', msg);
+        setTelephonyError(msg);
+        showToast(`PSTN Calling: ${msg}`);
+      }
+    }
   };
 
-  const endCall = () => {
+  const endCall = async () => {
+    clearCallPolling();
+    if (backendCallId) {
+      try {
+        await terminateCall(backendCallId);
+      } catch (err) {
+        console.warn('Failed to terminate backend call leg:', err);
+      }
+    }
     setCallState('wrapup');
   };
 
@@ -472,6 +575,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       callState, setCallState,
       callingLead, setCallingLead,
       activeCallTarget, setActiveCallTarget,
+      backendCallId, backendCallStatus, backendCallDetails, telephonyError,
+      dialpadModalOpen, setDialpadModalOpen,
       startCall, endCall,
       recentCalls, addRecentCall,
       shiftProgress, shiftPace, avgTalkTime, conversions, earnings, weeklyChartData,

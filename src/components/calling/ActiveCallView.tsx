@@ -43,6 +43,10 @@ export default function ActiveCallView() {
     grantConsent,
     declineConsent,
     resetConsent,
+    endCall,
+    backendCallId,
+    backendCallStatus,
+    backendCallDetails,
   } = useApp();
 
   // DPDP Consent Modal
@@ -460,6 +464,7 @@ export default function ActiveCallView() {
   };
 
   const handleHangup = () => {
+    endCall();
     audioService.stopRinging();
     audioService.playDisconnectTone();
     speechService.stopMicrophone();
@@ -630,9 +635,17 @@ export default function ActiveCallView() {
             </div>
 
             <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-orange-200">
-                Calling Customer • Ringing...
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-orange-200">
+                  Calling Customer • Ringing...
+                </span>
+                {backendCallId && (
+                  <span className="text-[10px] bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                    PSTN ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'GATEWAY'}): {backendCallStatus || 'RINGING'} • Leg: {backendCallDetails?.legs?.[0]?.telephony_leg_id ? backendCallDetails.legs[0].telephony_leg_id.slice(0, 10) + '...' : backendCallId.slice(0, 8)}
+                  </span>
+                )}
+              </div>
               <h3 className="text-xl font-bold">{activeCallTarget?.name || 'Mukunda R.'}</h3>
               <p className="text-xs text-orange-100 mt-0.5">
                 {activeCallTarget?.phone || '+91 98450 12345'} • {activeCallTarget?.intent || 'Ortho GRID'}
@@ -681,6 +694,12 @@ export default function ActiveCallView() {
                   <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full font-bold">
                     {activeCallTarget?.phone || '+91 98450 12345'}
                   </span>
+                  {backendCallId && (
+                    <span className="text-[10px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
+                      PSTN: {backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'LIVE'} ({backendCallStatus || 'CONNECTED'})
+                    </span>
+                  )}
                   {peerState === 'connected' && (
                     <span className="text-[10px] bg-teal-400 text-slate-900 px-2 py-0.5 rounded-full font-black flex items-center gap-1">
                       <Radio size={10} />
