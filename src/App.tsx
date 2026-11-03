@@ -35,8 +35,10 @@ function AppContent() {
         <Topbar />
 
         <main className="flex-1 p-3.5 sm:p-5 md:p-6 max-w-7xl w-full mx-auto">
-          {/* Active Calling Engine Layer — Rendered on top when ringing or active */}
-          <ActiveCallView />
+          {/* Active Calling Engine Layer — Rendered on top when ringing or active, isolated to Plan view */}
+          <div className={activeView === 'plan' ? 'contents' : 'hidden'} aria-hidden={activeView !== 'plan'}>
+            <ActiveCallView />
+          </div>
 
           {/* Primary View Router */}
           {activeView === 'dashboard' && <Dashboard />}
