@@ -406,7 +406,7 @@ export const pulseApi = {
    */
   async fetchChannelContext(channelSlug: string): Promise<AgentChannelContext> {
     try {
-      const cleanSlug = channelSlug.lstrip ? channelSlug.lstrip('#') : channelSlug.replace(/^#/, '');
+      const cleanSlug = channelSlug.replace(/^#/, '');
       const res = await fetch(`${API_BASE}/pulse/channels/${cleanSlug}/context`, {
         headers: DEFAULT_HEADERS,
       });
