@@ -20,6 +20,7 @@ export default function Planner() {
     setPlanTab,
     startCall,
     showToast,
+    setDialpadModalOpen,
   } = useApp();
 
   const handleStartPractise = (leadId: string, leadName: string) => {
@@ -59,11 +60,21 @@ export default function Planner() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2 rounded-xl backdrop-blur-xs self-start sm:self-auto">
-          <Calendar size={16} className="text-og-green-light" />
-          <span className="text-xs font-bold text-white tracking-wide">
-            Tuesday, 3 Nov 2026
-          </span>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+          <button
+            onClick={() => setDialpadModalOpen(true)}
+            className="flex items-center gap-1.5 bg-og-green hover:bg-emerald-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md transition-all active:scale-95 cursor-pointer"
+            title="Dial a real telephone number on live PSTN network"
+          >
+            <PhoneCall size={14} />
+            <span>Dial Real Phone (PSTN)</span>
+          </button>
+          <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2 rounded-xl backdrop-blur-xs">
+            <Calendar size={16} className="text-og-green-light" />
+            <span className="text-xs font-bold text-white tracking-wide">
+              Tuesday, 3 Nov 2026
+            </span>
+          </div>
         </div>
       </div>
 

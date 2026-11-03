@@ -7,6 +7,7 @@ import SettingsModal from './components/modals/SettingsModal';
 import AvatarModal from './components/modals/AvatarModal';
 import OgScoreModal from './components/modals/OgScoreModal';
 import LeadsModal from './components/modals/LeadsModal';
+import PstnDialpadModal from './components/calling/PstnDialpadModal';
 import Dashboard from './components/dashboard/Dashboard';
 import Planner from './components/plan/Planner';
 import Calendar from './components/calendar/Calendar';
@@ -34,8 +35,10 @@ function AppContent() {
         <Topbar />
 
         <main className="flex-1 p-3.5 sm:p-5 md:p-6 max-w-7xl w-full mx-auto">
-          {/* Active Calling Engine Layer — Rendered on top when ringing or active */}
-          <ActiveCallView />
+          {/* Active Calling Engine Layer — Rendered on top when ringing or active, isolated to Plan view */}
+          <div className={activeView === 'plan' ? 'contents' : 'hidden'} aria-hidden={activeView !== 'plan'}>
+            <ActiveCallView />
+          </div>
 
           {/* Primary View Router */}
           {activeView === 'dashboard' && <Dashboard />}
@@ -53,6 +56,7 @@ function AppContent() {
         <AvatarModal />
         <OgScoreModal />
         <LeadsModal />
+        <PstnDialpadModal />
 
         {/* Global Toast Notification */}
         {toastMessage && (

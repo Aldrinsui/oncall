@@ -81,10 +81,10 @@ def test_strict_e164_on_dto_phone_fields():
             source="Walk-in",
         )
 
-def test_call_dto_does_not_expose_is_simulated():
-    """Verify CallDTO does NOT contain or expose the internal is_simulated column."""
+def test_call_dto_exposes_is_simulated():
+    """Verify CallDTO exposes is_simulated so clients know if call is carrier live vs simulated."""
     call_fields = CallDTO.model_fields.keys()
-    assert "is_simulated" not in call_fields
+    assert "is_simulated" in call_fields
     assert "request_fingerprint" not in call_fields
     assert "duration_seconds" in call_fields
     assert "legs" in call_fields

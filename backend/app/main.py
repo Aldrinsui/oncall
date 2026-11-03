@@ -16,6 +16,7 @@ from backend.app.models import (
 )
 from backend.app.api.routes.pulse import router as pulse_router
 from backend.app.api.routes.tasks import router as tasks_router
+from backend.app.api.routes.calls import router as calls_router, webhook_router
 from backend.app.services.pulse_service import PulseService
 
 import logging
@@ -31,6 +32,23 @@ async def lifespan(app: FastAPI):
     # Seed initial Pulse data, channels, metrics, and tasks
     async with AsyncSessionLocal() as session:
         await PulseService.seed_data_if_empty(session)
+
+    # Validate provider and webhook URL configuration
+    provider = settings.TELEPHONY_PROVIDER.lower().strip()
+    if provider in ("twilio", "plivo"):
+        url = settings.PUBLIC_WEBHOOK_URL.lower().strip()
+        if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
+            if settings.ENVIRONMENT == "production":
+                raise ValueError(
+                    f"Production startup failed: Provider '{provider}' requires a publicly reachable HTTPS "
+                    f"PUBLIC_WEBHOOK_URL. Configured: '{settings.PUBLIC_WEBHOOK_URL}'"
+                )
+            else:
+                logger.warning(
+                    f"[TELEPHONY CONFIG WARNING] Running with live provider '{provider}' but PUBLIC_WEBHOOK_URL "
+                    f"is '{settings.PUBLIC_WEBHOOK_URL}'. Real carriers cannot reach localhost callbacks. "
+                    f"Ensure an HTTPS tunnel (e.g. ngrok) is configured before live carrier testing."
+                )
 
     yield
     # Shutdown
@@ -57,6 +75,8 @@ app.add_middleware(
 # Mount Routes
 app.include_router(pulse_router, prefix=settings.API_V1_STR)
 app.include_router(tasks_router, prefix=settings.API_V1_STR)
+app.include_router(calls_router, prefix=settings.API_V1_STR)
+app.include_router(webhook_router, prefix=settings.API_V1_STR)
 
 @app.get("/health", tags=["System"])
 @app.get(f"{settings.API_V1_STR}/health", tags=["System"])
@@ -66,6 +86,7 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "project": settings.PROJECT_NAME,
         "version": settings.VERSION,
+        "telephony_provider": settings.TELEPHONY_PROVIDER,
     }
 
 @app.exception_handler(Exception)

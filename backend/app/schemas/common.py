@@ -1,13 +1,13 @@
-from datetime import datetime
-from uuid import UUID
+from datetime import datetime, timezone
+from uuid import UUID, uuid4
 from typing import Generic, TypeVar, Optional, Any, Dict
 from pydantic import BaseModel, Field
 
 T = TypeVar("T")
 
 class MetaEnvelope(BaseModel):
-    request_id: UUID
-    timestamp: datetime
+    request_id: UUID = Field(default_factory=uuid4)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ErrorBody(BaseModel):
     code: str

@@ -36,6 +36,7 @@ class CallDTO(BaseModel):
     lead_id: Optional[UUID] = None
     direction: CallDirection
     status: CallStatus
+    is_simulated: bool = False
     notes: Optional[str] = None
     wrapup_outcome: Optional[str] = None
     created_at: datetime

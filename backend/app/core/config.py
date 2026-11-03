@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional
 from pydantic import computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +16,8 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"  # development, test, staging, production
 
-    # Database Settings: Default to local SQLite via aiosqlite for standalone execution
+    # Database Settings: Default to local SQLite via aiosqlite for standalone execution,
+    # or override with PostgreSQL (postgresql+asyncpg://...)
     DATABASE_URL: Optional[str] = None
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "postgres"
@@ -52,14 +54,36 @@ class Settings(BaseSettings):
     DEV_AGENT_3_NAME: str = "Sameena S."
     DEV_AGENT_3_STORE: str = "RT Nagar"
 
-    # Telephony Provider Selection
-    TELEPHONY_PROVIDER: str = "mock"
+    # Telephony Provider Selection: 'twilio', 'plivo', or 'mock'
+    TELEPHONY_PROVIDER: str = "twilio"
     PUBLIC_WEBHOOK_URL: str = "http://localhost:8000"
+
+    # Twilio Configuration
+    TWILIO_ACCOUNT_SID: str = ""
+    TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_CALLER_ID: str = ""
+
+    # Plivo Configuration
+    PLIVO_AUTH_ID: str = ""
+    PLIVO_AUTH_TOKEN: str = ""
+    PLIVO_CALLER_ID: str = ""
+
+    # Webhook Shared Secret
+    TELEPHONY_WEBHOOK_SECRET: str = "dev-telephony-secret-key"
 
     @model_validator(mode="after")
     def enforce_production_security(self) -> "Settings":
+        # Disallow development auth bypass outside development/test
         if self.ENVIRONMENT.lower() == "production":
             self.DEV_AUTH_BYPASS_ENABLED = False
+            # In production, if using a real carrier provider, webhook URL must be public HTTPS
+            if self.TELEPHONY_PROVIDER.lower() in ("twilio", "plivo"):
+                url = (self.PUBLIC_WEBHOOK_URL or "").strip().lower()
+                if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
+                    raise ValueError(
+                        f"Production environment with telephony provider '{self.TELEPHONY_PROVIDER}' "
+                        f"requires a publicly reachable HTTPS PUBLIC_WEBHOOK_URL. Got: '{self.PUBLIC_WEBHOOK_URL}'"
+                    )
         return self
 
     @computed_field

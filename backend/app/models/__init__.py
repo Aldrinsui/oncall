@@ -8,6 +8,7 @@ from backend.app.models.pulse import (
     AgentMetricModel,
 )
 from backend.app.models.tasks import TaskModel
+from backend.app.models.telephony import CallModel, CallLegModel, CallEventModel
 
 __all__ = [
     "Base",
@@ -18,4 +19,7 @@ __all__ = [
     "PulsePinnedResponseModel",
     "AgentMetricModel",
     "TaskModel",
+    "CallModel",
+    "CallLegModel",
+    "CallEventModel",
 ]
