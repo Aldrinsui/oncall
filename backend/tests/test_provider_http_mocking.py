@@ -1,6 +1,7 @@
 import base64
 import hashlib
 import hmac
+import json
 import uuid
 from typing import Dict, Any
 from urllib.parse import parse_qsl
@@ -18,6 +19,8 @@ from backend.app.domains.common.enums import (
 from backend.app.domains.telephony.base import LegDialRequest
 from backend.app.domains.telephony.twilio_provider import TwilioTelephonyProvider
 from backend.app.domains.telephony.plivo_provider import PlivoTelephonyProvider
+from backend.app.domains.telephony.exotel_provider import ExotelTelephonyProvider
+from backend.app.domains.telephony.provider_factory import get_telephony_provider
 from backend.app.services.telephony_service import TelephonyService
 from backend.app.core.database import async_engine, Base, AsyncSessionLocal
 from backend.app.main import app
@@ -26,11 +29,13 @@ _real_async_client = httpx.AsyncClient
 
 @pytest.fixture(autouse=True)
 async def setup_test_db():
+    get_telephony_provider(force_reload=True)
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    get_telephony_provider(force_reload=True)
 
 # ==============================================================================
 # 1. Twilio Provider HTTP Mock Tests
@@ -713,3 +718,462 @@ async def test_twilio_http_per_leg_caller_id_dispatch(monkeypatch):
     )
     await provider.initiate_leg(cust_req_fallback)
     assert posted_requests[3]["From"] == [customer_caller_id]
+
+# ==============================================================================
+# 3. Exotel Provider HTTP Mock Tests
+# ==============================================================================
+
+@pytest.mark.asyncio
+async def test_exotel_provider_auth_validation_and_repr_redaction():
+    """Verify Exotel credentials validation and credential redaction in __repr__."""
+    # 1. Missing account_sid
+    p_no_sid = ExotelTelephonyProvider(account_sid="", api_key="key1", api_token="tok1")
+    with pytest.raises(ValueError, match="EXOTEL_ACCOUNT_SID is required"):
+        p_no_sid.get_auth()
+
+    # 2. Missing key or token
+    p_no_key = ExotelTelephonyProvider(account_sid="EXO_1", api_key="", api_token="tok1")
+    with pytest.raises(ValueError, match="please set EXOTEL_API_KEY and EXOTEL_API_TOKEN"):
+        p_no_key.get_auth()
+
+    p_no_tok = ExotelTelephonyProvider(account_sid="EXO_1", api_key="key1", api_token="")
+    with pytest.raises(ValueError, match="please set EXOTEL_API_KEY and EXOTEL_API_TOKEN"):
+        p_no_tok.get_auth()
+
+    # 3. Successful auth
+    p_valid = ExotelTelephonyProvider(account_sid="EXO_1", api_key="my_key", api_token="my_token")
+    auth = p_valid.get_auth()
+    assert auth == ("my_key", "my_token")
+
+    # 4. Credential redaction in repr: never print plain text secrets
+    rep = repr(p_valid)
+    assert "EXO_1" in rep
+    assert "configured" in rep
+    assert "my_key" not in rep
+    assert "my_token" not in rep
+
+@pytest.mark.asyncio
+async def test_exotel_http_successful_call_creation(monkeypatch):
+    """Verify Exotel provider handles 202/201 from Exotel CPaaS Legs API (POST /v2/accounts/{account_sid}/legs)."""
+    captured_requests = []
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        assert "/v2/accounts/EXO_TEST_ACCOUNT/legs" in str(request.url)
+        assert request.method == "POST"
+        body_json = request.read().decode("utf-8")
+        import json
+        payload = json.loads(body_json)
+        captured_requests.append((request, payload))
+
+        return httpx.Response(
+            status_code=202,
+            json={
+                "request_id": "req-exotel-001",
+                "method": "POST",
+                "http_code": 202,
+                "response": {
+                    "error_data": None,
+                    "data": {
+                        "leg_sid": "leg_exotel_sid_12345",
+                        "account_sid": "EXO_TEST_ACCOUNT",
+                        "contact_uri": "+919876543210",
+                        "exophone": "+918012345678",
+                        "network_type": "pstn",
+                    },
+                },
+            },
+        )
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = ExotelTelephonyProvider(
+        account_sid="EXO_TEST_ACCOUNT",
+        api_key="exotel_key_abc",
+        api_token="exotel_token_xyz",
+        api_base_url="https://cpaas-api.in.exotel.com",
+        caller_id="+918012345678",
+        webhook_base_url="https://api.onground.ai",
+    )
+
+    req = LegDialRequest(
+        call_id="call-uuid-exotel-1",
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri="+919876543210",
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="+918012345678",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/exotel",
+    )
+
+    res = await provider.initiate_leg(req)
+    assert res.telephony_leg_id == "leg_exotel_sid_12345"
+    assert res.provider == "exotel"
+    assert res.is_simulated is False
+
+    # Check payload sent to Exotel
+    assert len(captured_requests) == 1
+    req_obj, payload = captured_requests[0]
+    assert payload["contact_uri"] == "+919876543210"
+    assert payload["exophone"] == "+918012345678"
+    assert payload["network_type"] == "pstn"
+    assert "https://api.onground.ai/api/v1/telephony/webhooks/exotel" in payload["leg_event_endpoint"]
+    # Check Basic Auth header
+    auth_header = req_obj.headers.get("authorization", "")
+    assert auth_header.startswith("Basic ")
+    decoded_auth = base64.b64decode(auth_header.split(" ")[1]).decode("utf-8")
+    assert decoded_auth == "exotel_key_abc:exotel_token_xyz"
+
+@pytest.mark.asyncio
+async def test_exotel_http_invalid_credentials(monkeypatch):
+    """Verify Exotel provider handles 401 Unauthorized from Exotel API."""
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=401,
+            json={"response": {"error_data": {"message": "Invalid API Key or Token"}}},
+        )
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = ExotelTelephonyProvider(
+        account_sid="EXO_INVALID",
+        api_key="bad_key",
+        api_token="bad_token",
+        caller_id="+918012345678",
+    )
+
+    req = LegDialRequest(
+        call_id=str(uuid.uuid4()),
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri="+919876543210",
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="+918012345678",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/exotel",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await provider.initiate_leg(req)
+    assert "401" in str(exc_info.value)
+    assert "Invalid API Key or Token" in str(exc_info.value)
+
+@pytest.mark.asyncio
+async def test_exotel_http_rejected_caller_id():
+    """Verify Exotel provider rejects outbound call when no Caller ID is configured."""
+    provider = ExotelTelephonyProvider(
+        account_sid="EXO_TEST",
+        api_key="key",
+        api_token="token",
+        caller_id="",
+    )
+
+    req = LegDialRequest(
+        call_id=str(uuid.uuid4()),
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri="+919876543210",
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/exotel",
+    )
+
+    with pytest.raises(ValueError, match="No valid Caller ID"):
+        await provider.initiate_leg(req)
+
+@pytest.mark.asyncio
+async def test_exotel_http_leg_termination_and_bridging(monkeypatch):
+    """Verify Exotel provider terminates legs via ExoML Hangup and bridges legs via /bridges endpoint."""
+    post_requests = []
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        import json
+        content_str = request.read().decode("utf-8")
+        data = json.loads(content_str) if content_str else {}
+        post_requests.append((str(request.url), data))
+
+        if "/legs/" in str(request.url) and "/actions" in str(request.url):
+            return httpx.Response(status_code=200, json={"status": "action queued"})
+        elif "/bridges" in str(request.url):
+            return httpx.Response(
+                status_code=201,
+                json={
+                    "bridge_sid": "bridge_exo_555",
+                    "account_sid": "EXO_TEST",
+                    "leg_sids": data.get("leg_sids", []),
+                },
+            )
+        return httpx.Response(status_code=404)
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = ExotelTelephonyProvider(
+        account_sid="EXO_TEST",
+        api_key="key",
+        api_token="token",
+        caller_id="+918012345678",
+        base_url="https://api.onground.ai",
+    )
+
+    # 1. Test terminate_leg
+    await provider.terminate_leg("leg_exo_agent_01")
+    assert len(post_requests) == 1
+    term_url, term_payload = post_requests[0]
+    assert "/v2/accounts/EXO_TEST/legs/leg_exo_agent_01/actions" in term_url
+    assert "Hangup" in term_payload.get("exoml", "")
+
+    # 2. Test bridge_legs
+    await provider.bridge_legs("call-uuid-1", "leg_exo_agent_01", "leg_exo_cust_02")
+    assert len(post_requests) == 2
+    bridge_url, bridge_payload = post_requests[1]
+    assert "/v2/accounts/EXO_TEST/bridges" in bridge_url
+    assert bridge_payload["leg_sids"] == ["leg_exo_agent_01", "leg_exo_cust_02"]
+
+@pytest.mark.asyncio
+async def test_exotel_cryptographic_signature_verification():
+    """Verify Exotel webhook signature verification using HMAC-SHA256."""
+    token = "secret_exotel_webhook_token"
+    provider = ExotelTelephonyProvider(
+        account_sid="EXO_TEST",
+        api_key="key",
+        api_token=token,
+    )
+
+    raw_body = b'{"event_type": "leg_lifecycle_event", "event_name": "leg_answered", "leg_sid": "leg_123"}'
+    computed_digest = hmac.new(token.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    # 1. Valid signature with sha256= prefix
+    valid_headers_prefix = {"x-exotel-signature": f"sha256={computed_digest}"}
+    assert provider.verify_webhook_signature(valid_headers_prefix, raw_body) is True
+
+    # 2. Valid signature bare hex
+    valid_headers_bare = {"X-Exotel-Signature": computed_digest}
+    assert provider.verify_webhook_signature(valid_headers_bare, raw_body) is True
+
+    # 3. Invalid signature
+    invalid_headers = {"x-exotel-signature": "sha256=wrong_digest_0000000000000000"}
+    assert provider.verify_webhook_signature(invalid_headers, raw_body) is False
+
+    # 4. Altered body
+    altered_body = b'{"tampered": true}'
+    assert provider.verify_webhook_signature(valid_headers_prefix, altered_body) is False
+
+    # 5. Missing header
+    assert provider.verify_webhook_signature({}, raw_body) is False
+
+@pytest.mark.asyncio
+async def test_exotel_webhook_event_parsing():
+    """Verify Exotel webhook event normalization across v2 and v1 formats."""
+    provider = ExotelTelephonyProvider(account_sid="EXO_TEST", api_key="k", api_token="t")
+
+    # 1. v2 leg_ringing
+    evt_ringing = provider.parse_webhook_event({}, {
+        "event_type": "leg_lifecycle_event",
+        "event_name": "leg_ringing",
+        "leg_sid": "leg_ring_123",
+    })
+    assert evt_ringing.provider == "exotel"
+    assert evt_ringing.telephony_leg_id == "leg_ring_123"
+    assert evt_ringing.event_type.value == "LEG_RINGING"
+
+    # 2. v2 leg_answered
+    evt_ans = provider.parse_webhook_event({}, {
+        "event_type": "leg_lifecycle_event",
+        "event_name": "leg_answered",
+        "leg_sid": "leg_ans_123",
+    })
+    assert evt_ans.event_type.value == "CALL_CONNECTED"
+
+    # 3. v2 leg_terminated with completed
+    evt_term = provider.parse_webhook_event({}, {
+        "event_type": "leg_lifecycle_event",
+        "event_name": "leg_terminated",
+        "terminal_status": "completed",
+        "leg_sid": "leg_term_123",
+    })
+    assert evt_term.event_type.value == "CALL_COMPLETED"
+
+    # 4. v2 leg_terminated with busy
+    evt_busy = provider.parse_webhook_event({}, {
+        "event_name": "leg_terminated",
+        "terminal_status": "busy",
+        "leg_sid": "leg_busy_123",
+    })
+    assert evt_busy.event_type.value == "CALL_BUSY"
+
+    # 5. v2 leg_terminated with no-answer
+    evt_noans = provider.parse_webhook_event({}, {
+        "event_name": "leg_terminated",
+        "terminal_status": "no-answer",
+        "leg_sid": "leg_noans_123",
+    })
+    assert evt_noans.event_type.value == "CALL_NO_ANSWER"
+
+    # 6. v1 StatusCallback format
+    evt_v1 = provider.parse_webhook_event({}, {
+        "CallSid": "call_v1_sid",
+        "Status": "completed",
+    })
+    assert evt_v1.telephony_leg_id == "call_v1_sid"
+    assert evt_v1.event_type.value == "CALL_COMPLETED"
+
+@pytest.mark.asyncio
+async def test_exotel_factory_registration(monkeypatch):
+    """Verify 'exotel' provider can be registered and fetched from provider_factory."""
+    monkeypatch.setattr(settings, "TELEPHONY_PROVIDER", "exotel")
+    monkeypatch.setattr(settings, "EXOTEL_ACCOUNT_SID", "EXO_FACTORY_TEST")
+    monkeypatch.setattr(settings, "EXOTEL_API_KEY", "key_fac")
+    monkeypatch.setattr(settings, "EXOTEL_API_TOKEN", "tok_fac")
+
+    prov = get_telephony_provider(force_reload=True)
+    assert isinstance(prov, ExotelTelephonyProvider)
+    assert prov.account_sid == "EXO_FACTORY_TEST"
+
+@pytest.mark.asyncio
+async def test_exotel_full_two_leg_call_flow_and_bridging(monkeypatch):
+    """
+    End-to-end PSTN demonstration test for Exotel:
+    1. Initiates two-leg outbound call via FastAPI endpoint.
+    2. Verifies provider dispatches both agent and customer legs to Exotel CPaaS /legs.
+    3. Simulates answered webhooks for both legs with HMAC-SHA256 signature.
+    4. Invokes bridging endpoint to patch legs into Exotel multi-party bridge.
+    """
+    account_sid = "EXO_E2E_ACCOUNT"
+    api_key = "exo_key_test"
+    api_token = "exo_token_test"
+    caller_id = "+918012345678"
+    agent_phone = "+919123456789"
+    customer_phone = "+919876543210"
+
+    monkeypatch.setattr(settings, "TELEPHONY_PROVIDER", "exotel")
+    monkeypatch.setattr(settings, "EXOTEL_ACCOUNT_SID", account_sid)
+    monkeypatch.setattr(settings, "EXOTEL_API_KEY", api_key)
+    monkeypatch.setattr(settings, "EXOTEL_API_TOKEN", api_token)
+    monkeypatch.setattr(settings, "EXOTEL_CALLER_ID", caller_id)
+    monkeypatch.setattr(settings, "DEV_AGENT_PHONE", agent_phone)
+    get_telephony_provider(force_reload=True)
+
+    legs_dispatched = []
+    bridges_dispatched = []
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        import json
+        req_url = str(request.url)
+        content_str = request.read().decode("utf-8")
+        data = json.loads(content_str) if content_str else {}
+
+        if "/legs" in req_url and request.method == "POST":
+            legs_dispatched.append(data)
+            leg_id = f"exo_leg_{len(legs_dispatched)}"
+            return httpx.Response(
+                status_code=202,
+                json={
+                    "request_id": f"req-{leg_id}",
+                    "http_code": 202,
+                    "response": {
+                        "data": {
+                            "leg_sid": leg_id,
+                            "account_sid": account_sid,
+                            "contact_uri": data.get("contact_uri"),
+                            "exophone": data.get("exophone"),
+                        }
+                    },
+                },
+            )
+        elif "/bridges" in req_url and request.method == "POST":
+            bridges_dispatched.append(data)
+            return httpx.Response(
+                status_code=201,
+                json={
+                    "bridge_sid": "exo_bridge_e2e_1",
+                    "account_sid": account_sid,
+                    "leg_sids": data.get("leg_sids", []),
+                },
+            )
+        return httpx.Response(status_code=404)
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    headers = {"X-Dev-Agent-Id": settings.DEV_AGENT_ID}
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Initiate outbound call
+        payload = {
+            "customer_phone": customer_phone,
+            "customer_name": "Kavita Rao",
+            "agent_phone": agent_phone,
+            "notes": "Testing Exotel outbound call",
+        }
+        resp = await client.post("/api/v1/calls", json=payload, headers=headers)
+        assert resp.status_code == 201, resp.text
+        call_data = resp.json()["data"]
+        call_id = call_data["id"]
+
+        assert len(call_data["legs"]) == 2
+        agent_leg = next(l for l in call_data["legs"] if l["leg_role"] == "AGENT")
+        customer_leg = next(l for l in call_data["legs"] if l["leg_role"] == "CUSTOMER")
+
+        assert agent_leg["provider"] == "exotel"
+        assert agent_leg["telephony_leg_id"] == "exo_leg_1"
+        assert agent_leg["to_endpoint_uri"] == agent_phone
+        assert agent_leg["from_endpoint_uri"] == caller_id
+
+        assert customer_leg["provider"] == "exotel"
+        assert customer_leg["telephony_leg_id"] == "exo_leg_2"
+        assert customer_leg["to_endpoint_uri"] == customer_phone
+        assert customer_leg["from_endpoint_uri"] == caller_id
+
+        assert len(legs_dispatched) == 2
+        assert legs_dispatched[0]["contact_uri"] == agent_phone
+        assert legs_dispatched[1]["contact_uri"] == customer_phone
+
+        # 2. Simulate Webhook: Agent handset picks up (leg_answered)
+        body_agent = json.dumps({
+            "event_type": "leg_lifecycle_event",
+            "event_name": "leg_answered",
+            "leg_sid": "exo_leg_1",
+        }).encode("utf-8")
+        sig_agent = hmac.new(api_token.encode("utf-8"), body_agent, hashlib.sha256).hexdigest()
+        wh_agent = await client.post(
+            "/api/v1/telephony/webhooks/exotel",
+            content=body_agent,
+            headers={
+                "Content-Type": "application/json",
+                "X-Exotel-Signature": f"sha256={sig_agent}",
+            },
+        )
+        assert wh_agent.status_code == 200
+
+        # 3. Simulate Webhook: Customer handset picks up (leg_answered)
+        body_cust = json.dumps({
+            "event_type": "leg_lifecycle_event",
+            "event_name": "leg_answered",
+            "leg_sid": "exo_leg_2",
+        }).encode("utf-8")
+        sig_cust = hmac.new(api_token.encode("utf-8"), body_cust, hashlib.sha256).hexdigest()
+        wh_cust = await client.post(
+            "/api/v1/telephony/webhooks/exotel",
+            content=body_cust,
+            headers={
+                "Content-Type": "application/json",
+                "X-Exotel-Signature": f"sha256={sig_cust}",
+            },
+        )
+        assert wh_cust.status_code == 200
+
+        # 4. Bridge both answered legs together
+        bridge_resp = await client.post(f"/api/v1/calls/{call_id}/bridge", headers=headers)
+        assert bridge_resp.status_code == 200, bridge_resp.text
+        bridge_data = bridge_resp.json()["data"]
+        assert bridge_data["status"] == "CONNECTED"
+
+        # Verify Exotel bridge was dispatched with both legs (once via webhook auto-bridge, once via explicit bridge endpoint)
+        assert len(bridges_dispatched) == 2
+        for b in bridges_dispatched:
+            assert b["leg_sids"] == ["exo_leg_1", "exo_leg_2"]
+

@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     PLIVO_AUTH_TOKEN: str = ""
     PLIVO_CALLER_ID: str = ""
 
+    # Exotel Configuration
+    EXOTEL_ACCOUNT_SID: str = ""
+    EXOTEL_API_KEY: str = ""
+    EXOTEL_API_TOKEN: str = ""
+    EXOTEL_API_BASE_URL: str = "https://cpaas-api.in.exotel.com"
+    EXOTEL_CALLER_ID: str = ""
+
     # Webhook Shared Secret
     TELEPHONY_WEBHOOK_SECRET: str = "dev-telephony-secret-key"
 
@@ -81,7 +88,7 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT.lower() == "production":
             self.DEV_AUTH_BYPASS_ENABLED = False
             # In production, if using a real carrier provider, webhook URL must be public HTTPS
-            if self.TELEPHONY_PROVIDER.lower() in ("twilio", "plivo"):
+            if self.TELEPHONY_PROVIDER.lower() in ("twilio", "plivo", "exotel"):
                 url = (self.PUBLIC_WEBHOOK_URL or "").strip().lower()
                 if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
                     raise ValueError(
@@ -96,6 +103,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "Incomplete Twilio API Key configuration: both TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET "
                 "must be provided together. Cannot fall back to TWILIO_AUTH_TOKEN when partially configured."
+            )
+
+        # Reject incomplete Exotel credentials if partially set
+        has_exotel_key = bool(self.EXOTEL_API_KEY and self.EXOTEL_API_KEY.strip())
+        has_exotel_token = bool(self.EXOTEL_API_TOKEN and self.EXOTEL_API_TOKEN.strip())
+        if has_exotel_key != has_exotel_token:
+            raise ValueError(
+                "Incomplete Exotel configuration: both EXOTEL_API_KEY and EXOTEL_API_TOKEN must be provided together."
             )
 
         return self

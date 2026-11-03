@@ -24,6 +24,7 @@ from backend.app.domains.telephony.state_machine import CallStateMachine
 from backend.app.domains.telephony.provider_factory import get_telephony_provider
 from backend.app.domains.telephony.twilio_provider import TwilioTelephonyProvider
 from backend.app.domains.telephony.plivo_provider import PlivoTelephonyProvider
+from backend.app.domains.telephony.exotel_provider import ExotelTelephonyProvider
 from backend.app.domains.telephony.mock_provider import MockTelephonyProvider
 from backend.app.models.telephony import CallModel, CallLegModel, CallEventModel
 
@@ -85,14 +86,20 @@ class TelephonyService:
                 raise ValueError("Plivo Caller ID is not configured. Please set PLIVO_CALLER_ID in .env")
             agent_from = settings.PLIVO_CALLER_ID
             customer_from = settings.PLIVO_CALLER_ID
+        elif prov_name == "exotel" and not is_simulated:
+            caller_id = settings.EXOTEL_CALLER_ID or settings.TWILIO_CALLER_ID
+            if not caller_id:
+                raise ValueError("Exotel Caller ID (ExoPhone) is not configured. Please set EXOTEL_CALLER_ID in .env")
+            agent_from = caller_id
+            customer_from = caller_id
         else:
             # Mock or offline test provider fallback
             fallback = settings.DEV_AGENT_PHONE or "+919000000001"
-            agent_from = settings.TWILIO_AGENT_CALLER_ID or settings.TWILIO_CALLER_ID or fallback
-            customer_from = settings.TWILIO_CUSTOMER_CALLER_ID or settings.TWILIO_CALLER_ID or fallback
+            agent_from = settings.TWILIO_AGENT_CALLER_ID or settings.TWILIO_CALLER_ID or settings.EXOTEL_CALLER_ID or fallback
+            customer_from = settings.TWILIO_CUSTOMER_CALLER_ID or settings.TWILIO_CALLER_ID or settings.EXOTEL_CALLER_ID or fallback
 
         # Webhook URL Validation for production environments
-        if prov_name in ("twilio", "plivo") and not is_simulated and settings.ENVIRONMENT == "production":
+        if prov_name in ("twilio", "plivo", "exotel") and not is_simulated and settings.ENVIRONMENT == "production":
             webhook_url = settings.PUBLIC_WEBHOOK_URL.lower().strip()
             if not webhook_url.startswith("https://") or "localhost" in webhook_url or "127.0.0.1" in webhook_url:
                 raise ValueError(
@@ -140,7 +147,7 @@ class TelephonyService:
             agent_endpoint = agent_endpoint_uri
         else:
             agent_endpoint = agent_endpoint_uri or settings.DEV_AGENT_PHONE
-            if prov_name in ("twilio", "plivo") and not is_simulated:
+            if prov_name in ("twilio", "plivo", "exotel") and not is_simulated:
                 if not agent_endpoint or agent_endpoint.strip() in ("+919000000001", "+910000000000"):
                     raise ValueError(
                         "DEV_AGENT_PHONE is not configured with your actual mobile number. "
@@ -385,6 +392,8 @@ class TelephonyService:
             adapter = TwilioTelephonyProvider()
         elif prov_key == "plivo" and not isinstance(adapter, PlivoTelephonyProvider):
             adapter = PlivoTelephonyProvider()
+        elif prov_key == "exotel" and not isinstance(adapter, ExotelTelephonyProvider):
+            adapter = ExotelTelephonyProvider()
         elif prov_key == "mock" and not isinstance(adapter, MockTelephonyProvider):
             adapter = MockTelephonyProvider()
 
@@ -669,7 +678,7 @@ class TelephonyService:
             raise ValueError("Cannot bridge legs that are already terminated")
 
         # For real carrier calls, both handsets must have answered before bridging
-        if not call.is_simulated and settings.TELEPHONY_PROVIDER in ("twilio", "plivo"):
+        if not call.is_simulated and settings.TELEPHONY_PROVIDER in ("twilio", "plivo", "exotel"):
             if agent_leg.status != CallLegStatus.ANSWERED or customer_leg.status != CallLegStatus.ANSWERED:
                 raise ValueError(
                     f"Cannot bridge legs until both have answered. Current: Agent={agent_leg.status.value}, Customer={customer_leg.status.value}"

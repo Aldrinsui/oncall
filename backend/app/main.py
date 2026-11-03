@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
 
     # Validate provider and webhook URL configuration
     provider = settings.TELEPHONY_PROVIDER.lower().strip()
-    if provider in ("twilio", "plivo"):
+    if provider in ("twilio", "plivo", "exotel"):
         url = settings.PUBLIC_WEBHOOK_URL.lower().strip()
         if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
             if settings.ENVIRONMENT == "production":
