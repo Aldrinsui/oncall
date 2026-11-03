@@ -94,13 +94,13 @@ export default function PstnDialpadModal() {
             </div>
             <div>
               <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <span>Real PSTN Outbound Dial</span>
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 rounded-full font-bold">
-                  Carrier Live
+                <span>PSTN Outbound Dial</span>
+                <span className="text-[10px] bg-sky-500/20 text-sky-300 border border-sky-400/30 px-2 py-0.5 rounded-full font-bold">
+                  PSTN Gateway
                 </span>
               </h3>
               <p className="text-xs text-gray-300 mt-0.5">
-                Dials a genuine telephone on physical cellular network
+                Initiate outbound call via configured telephony provider
               </p>
             </div>
           </div>
@@ -114,12 +114,12 @@ export default function PstnDialpadModal() {
 
         {/* Content Form */}
         <form onSubmit={handleDial} className="p-5 space-y-4">
-          {/* Live PSTN Notice */}
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-start gap-2.5">
-            <ShieldCheck size={16} className="text-og-forest mt-0.5 flex-shrink-0" />
-            <div className="text-xs text-og-forest">
-              <span className="font-bold">Real Telephony Gateway Active: </span>
-              Calls initiated here trigger genuine PSTN ringing on real cellular handsets.
+          {/* Telephony Gateway Notice */}
+          <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex items-start gap-2.5">
+            <ShieldCheck size={16} className="text-sky-700 mt-0.5 flex-shrink-0" />
+            <div className="text-xs text-sky-800">
+              <span className="font-bold">Telephony Gateway: </span>
+              Calls are routed through the configured backend provider (Twilio / Plivo / Mock).
             </div>
           </div>
 

@@ -7,11 +7,33 @@ from backend.app.core.config import settings
 from backend.app.core.database import async_engine, Base
 from backend.app.api.routes.calls import router as calls_router, webhook_router
 
+import logging
+
+logger = logging.getLogger("uvicorn.error")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Ensure tables exist on startup
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Validate provider and webhook URL configuration
+    provider = settings.TELEPHONY_PROVIDER.lower().strip()
+    if provider in ("twilio", "plivo"):
+        url = settings.PUBLIC_WEBHOOK_URL.lower().strip()
+        if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
+            if settings.ENVIRONMENT == "production":
+                raise ValueError(
+                    f"Production startup failed: Provider '{provider}' requires a publicly reachable HTTPS "
+                    f"PUBLIC_WEBHOOK_URL. Configured: '{settings.PUBLIC_WEBHOOK_URL}'"
+                )
+            else:
+                logger.warning(
+                    f"[TELEPHONY CONFIG WARNING] Running with live provider '{provider}' but PUBLIC_WEBHOOK_URL "
+                    f"is '{settings.PUBLIC_WEBHOOK_URL}'. Real carriers cannot reach localhost callbacks. "
+                    f"Ensure an HTTPS tunnel (e.g. ngrok) is configured before live carrier testing."
+                )
+
     yield
     # Shutdown
     await async_engine.dispose()

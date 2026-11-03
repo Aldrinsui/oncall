@@ -29,6 +29,7 @@ export interface CallDto {
   lead_id?: string;
   direction: string;
   status: 'QUEUED' | 'INITIATING' | 'AGENT_RINGING' | 'CUSTOMER_RINGING' | 'CONNECTED' | 'ON_HOLD' | 'WRAPUP' | 'COMPLETED' | 'FAILED' | 'BUSY' | 'NO_ANSWER' | 'CANCELLED';
+  is_simulated?: boolean;
   notes?: string;
   wrapup_outcome?: string;
   created_at: string;
@@ -60,10 +61,21 @@ const getApiBaseUrl = (): string => {
 const DEV_AGENT_ID = '00000000-0000-0000-0000-000000000001';
 
 const getHeaders = (): HeadersInit => {
-  return {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'X-Dev-Agent-Id': DEV_AGENT_ID,
   };
+
+  const authToken = typeof window !== 'undefined'
+    ? localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+    : null;
+
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  } else if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+    headers['X-Dev-Agent-Id'] = DEV_AGENT_ID;
+  }
+
+  return headers;
 };
 
 /**
@@ -168,4 +180,29 @@ export async function listRecentCalls(): Promise<CallDto[]> {
 
   const json = await res.json();
   return json.data || [];
+}
+
+/**
+ * Bridges active agent and customer legs into a shared conference room.
+ */
+export async function bridgeCall(callId: string): Promise<CallDto> {
+  const baseUrl = getApiBaseUrl();
+  const res = await fetch(`${baseUrl}/api/v1/calls/${callId}/bridge`, {
+    method: 'POST',
+    headers: getHeaders(),
+  });
+
+  if (!res.ok) {
+    let errMessage = `HTTP ${res.status}`;
+    try {
+      const errJson = await res.json();
+      errMessage = errJson.detail || errJson.message || errMessage;
+    } catch {
+      // ignore
+    }
+    throw new Error(errMessage);
+  }
+
+  const json = await res.json();
+  return json.data;
 }

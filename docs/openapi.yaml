@@ -1505,6 +1505,9 @@ components:
         status:
           type: string
           enum: [QUEUED, INITIATING, AGENT_RINGING, CUSTOMER_RINGING, CONNECTED, ON_HOLD, WRAPUP, COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED]
+        is_simulated:
+          type: boolean
+          description: "True if the call was processed via a simulated or mock provider; False if handled by a physical PSTN carrier gateway."
         notes:
           type: [string, "null"]
         wrapup_outcome:

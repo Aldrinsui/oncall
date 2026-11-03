@@ -22,6 +22,9 @@ from backend.app.domains.telephony.base import (
 )
 from backend.app.domains.telephony.state_machine import CallStateMachine
 from backend.app.domains.telephony.provider_factory import get_telephony_provider
+from backend.app.domains.telephony.twilio_provider import TwilioTelephonyProvider
+from backend.app.domains.telephony.plivo_provider import PlivoTelephonyProvider
+from backend.app.domains.telephony.mock_provider import MockTelephonyProvider
 from backend.app.models.telephony import CallModel, CallLegModel, CallEventModel
 
 def ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -61,8 +64,30 @@ class TelephonyService:
         call_id = uuid.uuid4()
         idempotency_key = f"call-{call_id}"
 
-        from_phone = settings.DEV_AGENT_PHONE or "+919000000001"
-        is_simulated = settings.TELEPHONY_PROVIDER.lower() == "mock"
+        # Caller ID Selection: strictly enforce provider-configured caller ID for real providers
+        prov_name = settings.TELEPHONY_PROVIDER.lower().strip()
+        is_simulated = prov_name == "mock" or isinstance(self.provider, MockTelephonyProvider)
+
+        if prov_name == "twilio" and not is_simulated:
+            if not settings.TWILIO_CALLER_ID:
+                raise ValueError("Twilio Caller ID is not configured. Please set TWILIO_CALLER_ID in .env")
+            from_phone = settings.TWILIO_CALLER_ID
+        elif prov_name == "plivo" and not is_simulated:
+            if not settings.PLIVO_CALLER_ID:
+                raise ValueError("Plivo Caller ID is not configured. Please set PLIVO_CALLER_ID in .env")
+            from_phone = settings.PLIVO_CALLER_ID
+        else:
+            # Mock or offline test provider fallback
+            from_phone = settings.DEV_AGENT_PHONE or "+919000000001"
+
+        # Webhook URL Validation for production environments
+        if prov_name in ("twilio", "plivo") and not is_simulated and settings.ENVIRONMENT == "production":
+            webhook_url = settings.PUBLIC_WEBHOOK_URL.lower().strip()
+            if not webhook_url.startswith("https://") or "localhost" in webhook_url or "127.0.0.1" in webhook_url:
+                raise ValueError(
+                    f"Production call initiation failed: Provider '{prov_name}' requires a publicly reachable "
+                    f"HTTPS PUBLIC_WEBHOOK_URL. Configured: '{settings.PUBLIC_WEBHOOK_URL}'"
+                )
 
         # 1. Create Call record in INITIATING state
         call = CallModel(
@@ -97,8 +122,26 @@ class TelephonyService:
             initiated_at=now,
         )
 
+        # 3. Create agent leg to establish complete agent/customer telecaller topology
+        agent_endpoint = agent_endpoint_uri or settings.DEV_AGENT_PHONE or "+919000000001"
+        agent_ep_type = "PSTN" if agent_endpoint.startswith("+") else "WEBRTC"
+        agent_leg = CallLegModel(
+            id=uuid.uuid4(),
+            call_id=call_id,
+            leg_role=CallLegRole.AGENT,
+            attempt_number=1,
+            provider=settings.TELEPHONY_PROVIDER,
+            to_endpoint_type=agent_ep_type,
+            to_endpoint_uri=agent_endpoint,
+            from_endpoint_type="PSTN",
+            from_endpoint_uri=from_phone,
+            status=CallLegStatus.INITIATING,
+            initiated_at=now,
+        )
+
         self.db.add(call)
         self.db.add(customer_leg)
+        self.db.add(agent_leg)
         await self.db.flush()
 
         # 3. Dispatch outbound call through real telephony provider
@@ -245,15 +288,25 @@ class TelephonyService:
         4. Correlates with call and call leg.
         5. Updates states, chronology, and duration.
         """
-        # 1. Verify signature
-        is_valid = self.provider.verify_webhook_signature(
+        # Select provider adapter matching incoming webhook route
+        prov_key = provider_name.lower().strip()
+        adapter: TelephonyProvider = self.provider
+        if prov_key == "twilio" and not isinstance(adapter, TwilioTelephonyProvider):
+            adapter = TwilioTelephonyProvider()
+        elif prov_key == "plivo" and not isinstance(adapter, PlivoTelephonyProvider):
+            adapter = PlivoTelephonyProvider()
+        elif prov_key == "mock" and not isinstance(adapter, MockTelephonyProvider):
+            adapter = MockTelephonyProvider()
+
+        # 1. Verify signature using the matching provider adapter
+        is_valid = adapter.verify_webhook_signature(
             raw_headers=raw_headers, raw_body=raw_body_bytes, request_url=request_url
         )
         if not is_valid:
             return False, "Invalid webhook signature", None
 
         # 2. Parse into canonical event
-        telephony_event = self.provider.parse_webhook_event(raw_headers, raw_body_data)
+        telephony_event = adapter.parse_webhook_event(raw_headers, raw_body_data)
         telephony_leg_id = telephony_event.telephony_leg_id
 
         if not telephony_leg_id:
@@ -297,7 +350,7 @@ class TelephonyService:
         if telephony_event.event_type == CallEventType.LEG_RINGING:
             leg.status = CallLegStatus.RINGING
             if CallStateMachine.can_transition(call.status, CallStatus.CUSTOMER_RINGING):
-                call.status = CallStatus.CUSTOMER_RINGING
+                call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
 
         elif telephony_event.event_type == CallEventType.CALL_CONNECTED:
             leg.status = CallLegStatus.ANSWERED
@@ -306,7 +359,20 @@ class TelephonyService:
             if not call.connected_at:
                 call.connected_at = now
             if CallStateMachine.can_transition(call.status, CallStatus.CONNECTED):
-                call.status = CallStatus.CONNECTED
+                call.status = CallStateMachine.transition(call.status, CallStatus.CONNECTED)
+
+            # Bridge media between agent leg and customer leg into conference room
+            agent_leg = next((l for l in call.legs if l.leg_role == CallLegRole.AGENT), None)
+            customer_leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), None)
+            if agent_leg and customer_leg:
+                try:
+                    await adapter.bridge_legs(
+                        call_id=str(call.id),
+                        agent_leg_id=agent_leg.telephony_leg_id or "",
+                        customer_leg_id=customer_leg.telephony_leg_id or "",
+                    )
+                except Exception:
+                    pass
 
         elif telephony_event.event_type == CallEventType.CALL_COMPLETED:
             leg.status = CallLegStatus.COMPLETED
@@ -319,27 +385,83 @@ class TelephonyService:
                 call.ended_at = now
             if call.connected_at:
                 call.duration_seconds = max(0, int((now - ensure_utc(call.connected_at)).total_seconds()))
-                call.status = CallStatus.WRAPUP
+                if CallStateMachine.can_transition(call.status, CallStatus.WRAPUP):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.WRAPUP)
             else:
-                call.status = CallStatus.COMPLETED
+                if CallStateMachine.can_transition(call.status, CallStatus.COMPLETED):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.COMPLETED)
 
         elif telephony_event.event_type in {CallEventType.CALL_BUSY, CallEventType.LEG_BUSY}:
             leg.status = CallLegStatus.BUSY
             leg.ended_at = now
             call.ended_at = now
-            call.status = CallStatus.BUSY
+            if CallStateMachine.can_transition(call.status, CallStatus.BUSY):
+                call.status = CallStateMachine.transition(call.status, CallStatus.BUSY)
 
         elif telephony_event.event_type in {CallEventType.CALL_NO_ANSWER, CallEventType.LEG_NO_ANSWER}:
             leg.status = CallLegStatus.NO_ANSWER
             leg.ended_at = now
             call.ended_at = now
-            call.status = CallStatus.NO_ANSWER
+            if CallStateMachine.can_transition(call.status, CallStatus.NO_ANSWER):
+                call.status = CallStateMachine.transition(call.status, CallStatus.NO_ANSWER)
 
         elif telephony_event.event_type in {CallEventType.CALL_FAILED, CallEventType.CALL_CANCELLED}:
+            target_status = CallStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallStatus.CANCELLED
             leg.status = CallLegStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallLegStatus.CANCELLED
             leg.ended_at = now
             call.ended_at = now
-            call.status = CallStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallStatus.CANCELLED
+            if CallStateMachine.can_transition(call.status, target_status):
+                call.status = CallStateMachine.transition(call.status, target_status)
 
         await self.db.commit()
         return True, "Webhook processed successfully", await self.get_call_by_id(call.id)
+
+    async def bridge_call_legs(self, call_id: uuid.UUID) -> CallModel:
+        """
+        Manually or programmatically triggers provider media bridging between active call legs.
+        """
+        call = await self.get_call_by_id(call_id)
+        if not call:
+            raise ValueError(f"Call {call_id} not found")
+
+        agent_leg = next((l for l in call.legs if l.leg_role == CallLegRole.AGENT), None)
+        customer_leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), None)
+        if not customer_leg:
+            raise ValueError("Customer leg not found for call")
+
+        now = datetime.now(timezone.utc)
+        await self.provider.bridge_legs(
+            call_id=str(call.id),
+            agent_leg_id=agent_leg.telephony_leg_id if agent_leg else "",
+            customer_leg_id=customer_leg.telephony_leg_id or "",
+        )
+
+        if customer_leg.status != CallLegStatus.ANSWERED:
+            customer_leg.status = CallLegStatus.ANSWERED
+            if not customer_leg.answered_at:
+                customer_leg.answered_at = now
+
+        if agent_leg and agent_leg.status != CallLegStatus.ANSWERED:
+            agent_leg.status = CallLegStatus.ANSWERED
+            if not agent_leg.answered_at:
+                agent_leg.answered_at = now
+
+        if CallStateMachine.can_transition(call.status, CallStatus.CONNECTED):
+            call.status = CallStateMachine.transition(call.status, CallStatus.CONNECTED)
+        if not call.connected_at:
+            call.connected_at = now
+
+        event = CallEventModel(
+            id=uuid.uuid4(),
+            call_id=call_id,
+            event_source="INTERNAL",
+            provider=settings.TELEPHONY_PROVIDER,
+            provider_event_id=f"bridge-{call_id}-{now.timestamp()}",
+            event_type=CallEventType.CALL_CONNECTED,
+            payload={"action": "bridge_legs", "status": "bridged"},
+            occurred_at=now,
+            received_at=now,
+        )
+        self.db.add(event)
+        await self.db.commit()
+        return await self.get_call_by_id(call_id)

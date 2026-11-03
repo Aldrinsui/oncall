@@ -4,6 +4,7 @@ import {
   fetchCallStatus,
   terminateCall,
   listRecentCalls,
+  bridgeCall,
   type CallDto,
 } from '../telephonyApi';
 
@@ -131,5 +132,28 @@ describe('telephonyApi client service', () => {
 
     const result = await listRecentCalls();
     expect(result).toHaveLength(2);
+  });
+
+  it('bridgeCall issues bridge request to backend', async () => {
+    const mockCallDto: Partial<CallDto> = {
+      id: 'call-1234-uuid',
+      status: 'CONNECTED',
+      is_simulated: false,
+    };
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: mockCallDto }),
+    } as any);
+
+    const result = await bridgeCall('call-1234-uuid');
+    expect(result.status).toBe('CONNECTED');
+    expect(result.is_simulated).toBe(false);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/calls/call-1234-uuid/bridge'),
+      expect.objectContaining({
+        method: 'POST',
+      })
+    );
   });
 });

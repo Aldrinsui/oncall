@@ -86,6 +86,7 @@ def model_to_dto(call: CallModel) -> CallDTO:
         lead_id=call.lead_id,
         direction=call_direction,
         status=call.status,
+        is_simulated=bool(call.is_simulated),
         notes=call.notes,
         wrapup_outcome=call.wrapup_outcome,
         created_at=call.created_at,
@@ -100,14 +101,14 @@ def resolve_request_agent(
     authorization: Optional[str] = Header(default=None),
     x_dev_agent_id: Optional[str] = Header(default=None),
 ) -> uuid.UUID:
-    """Enforces authentication: Bearer JWT in production, X-Dev-Agent-Id in development."""
+    """Enforces authentication: Bearer JWT in production, X-Dev-Agent-Id in development/test."""
     if authorization and authorization.startswith("Bearer "):
         token = authorization.split("Bearer ")[1].strip()
         if token:
             # Placeholder for JWT subject extraction
             return uuid.UUID(settings.DEV_AGENT_ID)
 
-    if settings.DEV_AUTH_BYPASS_ENABLED:
+    if settings.ENVIRONMENT in ("development", "test") and settings.DEV_AUTH_BYPASS_ENABLED:
         if x_dev_agent_id:
             try:
                 return uuid.UUID(x_dev_agent_id)
@@ -209,6 +210,24 @@ async def terminate_call(
     dto = model_to_dto(call)
     return CallDetailResponse(data=dto, meta=MetaEnvelope())
 
+@router.post("/{id}/bridge", response_model=CallDetailResponse)
+async def bridge_call(
+    id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    agent_id: uuid.UUID = Depends(resolve_request_agent),
+):
+    """
+    Bridges media between agent leg and customer leg into a shared conference room.
+    """
+    service = TelephonyService(db)
+    try:
+        call = await service.bridge_call_legs(id)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+
+    dto = model_to_dto(call)
+    return CallDetailResponse(data=dto, meta=MetaEnvelope())
+
 @webhook_router.post("/{provider}")
 async def receive_provider_webhook(
     provider: str,
@@ -265,3 +284,31 @@ async def twilio_twiml_endpoint():
         '</Response>'
     )
     return Response(content=twiml_content, media_type="application/xml")
+
+@webhook_router.api_route("/plivo/answer", methods=["GET", "POST"])
+async def plivo_answer_endpoint(request: Request):
+    """
+    Serves Plivo XML when an outbound call connects.
+    """
+    xml_content = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<Response>'
+        '<Speak voice="WOMAN" language="en-IN">'
+        'Connecting call from OnGround A I tele-caller platform. Your line is live.'
+        '</Speak>'
+        '<Wait length="60"/>'
+        '</Response>'
+    )
+    return Response(content=xml_content, media_type="application/xml")
+
+@webhook_router.api_route("/plivo/conference", methods=["GET", "POST"])
+async def plivo_conference_endpoint(request: Request, room: Optional[str] = None):
+    """
+    Serves Plivo XML bridging call legs into a shared conference room.
+    """
+    room_name = room or request.query_params.get("room", "oncall-bridge")
+    xml_content = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        f'<Response><Conference beep="false">{room_name}</Conference></Response>'
+    )
+    return Response(content=xml_content, media_type="application/xml")

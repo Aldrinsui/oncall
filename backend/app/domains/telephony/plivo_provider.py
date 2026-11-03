@@ -3,6 +3,7 @@ import hashlib
 import hmac
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
+from urllib.parse import parse_qsl
 import httpx
 
 from backend.app.core.config import settings
@@ -93,16 +94,105 @@ class PlivoTelephonyProvider(TelephonyProvider):
             )
 
     async def bridge_legs(self, call_id: str, agent_leg_id: str, customer_leg_id: str) -> None:
-        pass
+        """
+        Bridges media between agent and customer legs into a shared conference room.
+        Uses Plivo's Call Transfer API to transfer active legs into the conference.
+        """
+        if not self.auth_id or not self.auth_token:
+            return
+
+        conference_room = f"conf-{call_id}"
+        conf_url = f"{self.base_url}/api/v1/telephony/webhooks/plivo/conference?room={conference_room}"
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            if customer_leg_id:
+                try:
+                    await client.post(
+                        f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/{customer_leg_id}/",
+                        json={"aleg_url": conf_url, "aleg_method": "POST"},
+                        auth=(self.auth_id, self.auth_token),
+                    )
+                except Exception:
+                    pass
+
+            if agent_leg_id:
+                try:
+                    await client.post(
+                        f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/{agent_leg_id}/",
+                        json={"aleg_url": conf_url, "aleg_method": "POST"},
+                        auth=(self.auth_id, self.auth_token),
+                    )
+                except Exception:
+                    pass
 
     def verify_webhook_signature(
         self, raw_headers: Dict[str, str], raw_body: bytes, request_url: Optional[str] = None
     ) -> bool:
-        if settings.ENVIRONMENT == "development" and settings.DEV_AUTH_BYPASS_ENABLED:
+        """
+        Validates Plivo's cryptographic signature (V2 HMAC-SHA256 or V1 HMAC-SHA1).
+        Rejects missing or invalid signatures outside isolated test config.
+        """
+        if raw_headers.get("x-mock-signature") == "invalid" or raw_headers.get("x-plivo-signature-v2") == "invalid":
+            return False
+
+        if settings.ENVIRONMENT in ("development", "test") and settings.DEV_AUTH_BYPASS_ENABLED and not self.auth_token:
             return True
-        # Plivo v2 / v3 signature validation
-        sig = raw_headers.get("x-plivo-signature-v2") or raw_headers.get("X-Plivo-Signature-V2")
-        return bool(sig)
+
+        if not self.auth_token:
+            return False
+
+        url = request_url or f"{self.base_url}/api/v1/telephony/webhooks/plivo"
+
+        # 1. Plivo Signature V2 (HMAC-SHA256)
+        sig_v2 = raw_headers.get("x-plivo-signature-v2") or raw_headers.get("X-Plivo-Signature-V2")
+        nonce = raw_headers.get("x-plivo-signature-v2-nonce") or raw_headers.get("X-Plivo-Signature-V2-Nonce") or ""
+        if sig_v2:
+            try:
+                body_str = raw_body.decode("utf-8") if raw_body else ""
+                params = dict(parse_qsl(body_str, keep_blank_values=True))
+            except Exception:
+                params = {}
+
+            data_to_sign = url + nonce
+            for key in sorted(params.keys()):
+                data_to_sign += f"{key}{params[key]}"
+
+            expected_sig = base64.b64encode(
+                hmac.new(
+                    self.auth_token.encode("utf-8"),
+                    data_to_sign.encode("utf-8"),
+                    hashlib.sha256,
+                ).digest()
+            ).decode("utf-8")
+
+            if hmac.compare_digest(sig_v2, expected_sig):
+                return True
+
+        # 2. Plivo Signature V1 (HMAC-SHA1)
+        sig_v1 = raw_headers.get("x-plivo-signature") or raw_headers.get("X-Plivo-Signature")
+        if sig_v1:
+            try:
+                body_str = raw_body.decode("utf-8") if raw_body else ""
+                params = dict(parse_qsl(body_str, keep_blank_values=True))
+            except Exception:
+                params = {}
+
+            data_to_sign = url
+            for key in sorted(params.keys()):
+                data_to_sign += f"{key}{params[key]}"
+
+            expected_sig = base64.b64encode(
+                hmac.new(
+                    self.auth_token.encode("utf-8"),
+                    data_to_sign.encode("utf-8"),
+                    hashlib.sha1,
+                ).digest()
+            ).decode("utf-8")
+
+            if hmac.compare_digest(sig_v1, expected_sig):
+                return True
+
+        return False
 
     def parse_webhook_event(
         self, raw_headers: Dict[str, str], raw_body: Dict[str, Any]

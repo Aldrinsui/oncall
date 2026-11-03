@@ -642,7 +642,7 @@ export default function ActiveCallView() {
                 {backendCallId && (
                   <span className="text-[10px] bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    PSTN ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'GATEWAY'}): {backendCallStatus || 'RINGING'} • Leg: {backendCallDetails?.legs?.[0]?.telephony_leg_id ? backendCallDetails.legs[0].telephony_leg_id.slice(0, 10) + '...' : backendCallId.slice(0, 8)}
+                    {backendCallDetails?.is_simulated ? 'SIMULATED' : 'CARRIER'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'GATEWAY'}): {backendCallStatus || 'RINGING'} • Leg: {backendCallDetails?.legs?.[0]?.telephony_leg_id ? backendCallDetails.legs[0].telephony_leg_id.slice(0, 10) + '...' : backendCallId.slice(0, 8)}
                   </span>
                 )}
               </div>
@@ -695,9 +695,9 @@ export default function ActiveCallView() {
                     {activeCallTarget?.phone || '+91 98450 12345'}
                   </span>
                   {backendCallId && (
-                    <span className="text-[10px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
-                      PSTN: {backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'LIVE'} ({backendCallStatus || 'CONNECTED'})
+                    <span className={`text-[10px] ${backendCallDetails?.is_simulated ? 'bg-amber-500/30 text-amber-200 border-amber-400/40' : 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40'} border px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${backendCallDetails?.is_simulated ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+                      {backendCallDetails?.is_simulated ? 'SIMULATED MOCK' : 'CARRIER LIVE'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'CONNECTED'}
                     </span>
                   )}
                   {peerState === 'connected' && (

@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     # Webhook Shared Secret
     TELEPHONY_WEBHOOK_SECRET: str = "dev-telephony-secret-key"
 
+    @model_validator(mode="after")
+    def enforce_production_security(self) -> "Settings":
+        # Disallow development auth bypass outside development/test
+        if self.ENVIRONMENT.lower() == "production":
+            self.DEV_AUTH_BYPASS_ENABLED = False
+            # In production, if using a real carrier provider, webhook URL must be public HTTPS
+            if self.TELEPHONY_PROVIDER.lower() in ("twilio", "plivo"):
+                url = (self.PUBLIC_WEBHOOK_URL or "").strip().lower()
+                if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
+                    raise ValueError(
+                        f"Production environment with telephony provider '{self.TELEPHONY_PROVIDER}' "
+                        f"requires a publicly reachable HTTPS PUBLIC_WEBHOOK_URL. Got: '{self.PUBLIC_WEBHOOK_URL}'"
+                    )
+        return self
+
     @computed_field
     @property
     def async_database_url(self) -> str:

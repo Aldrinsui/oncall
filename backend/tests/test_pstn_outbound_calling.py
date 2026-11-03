@@ -51,9 +51,12 @@ async def test_valid_phone_number_call_initiation(client, mock_provider):
     data = response.json()["data"]
 
     assert data["status"] == CallStatus.CUSTOMER_RINGING.value
-    assert len(data["legs"]) == 1
-    assert data["legs"][0]["to_endpoint_uri"] == "+919876543210"
-    assert data["legs"][0]["telephony_leg_id"] is not None
+    assert len(data["legs"]) == 2
+    cust_leg = next(l for l in data["legs"] if l["leg_role"] == "CUSTOMER")
+    agent_leg = next(l for l in data["legs"] if l["leg_role"] == "AGENT")
+    assert cust_leg["to_endpoint_uri"] == "+919876543210"
+    assert cust_leg["telephony_leg_id"] is not None
+    assert agent_leg is not None
     assert len(mock_provider.dispatched_legs) == 1
 
 @pytest.mark.asyncio
@@ -145,7 +148,7 @@ async def test_webhook_processing_and_deduplication(client, mock_provider):
     )
     call_data = create_resp.json()["data"]
     call_id = call_data["id"]
-    leg_id = call_data["legs"][0]["telephony_leg_id"]
+    leg_id = next(l["telephony_leg_id"] for l in call_data["legs"] if l["leg_role"] == "CUSTOMER")
 
     # 1. Send call connected webhook
     webhook_payload = {
@@ -173,7 +176,7 @@ async def test_webhook_busy_and_no_answer_outcomes(client, mock_provider):
 
     # Busy outcome
     c1 = await client.post("/api/v1/calls", json={"customer_phone": "+919876543210"}, headers=headers)
-    leg1 = c1.json()["data"]["legs"][0]["telephony_leg_id"]
+    leg1 = next(l["telephony_leg_id"] for l in c1.json()["data"]["legs"] if l["leg_role"] == "CUSTOMER")
     id1 = c1.json()["data"]["id"]
 
     await client.post(
@@ -185,7 +188,7 @@ async def test_webhook_busy_and_no_answer_outcomes(client, mock_provider):
 
     # No-answer outcome
     c2 = await client.post("/api/v1/calls", json={"customer_phone": "+919876543211"}, headers=headers)
-    leg2 = c2.json()["data"]["legs"][0]["telephony_leg_id"]
+    leg2 = next(l["telephony_leg_id"] for l in c2.json()["data"]["legs"] if l["leg_role"] == "CUSTOMER")
     id2 = c2.json()["data"]["id"]
 
     await client.post(
@@ -241,7 +244,8 @@ async def test_valid_indian_landline_with_std_code(client, mock_provider):
     resp = await client.post("/api/v1/calls", json=payload, headers=headers)
     assert resp.status_code == 201
     data = resp.json()["data"]
-    assert data["legs"][0]["to_endpoint_uri"] == "+918025539999"
+    cust_leg = next(l for l in data["legs"] if l["leg_role"] == "CUSTOMER")
+    assert cust_leg["to_endpoint_uri"] == "+918025539999"
     assert data["status"] == CallStatus.CUSTOMER_RINGING.value
 
 @pytest.mark.asyncio
@@ -251,7 +255,7 @@ async def test_call_lifecycle_ringing_connected_completed(client, mock_provider)
     c = await client.post("/api/v1/calls", json={"customer_phone": "+919876543210"}, headers=headers)
     call_data = c.json()["data"]
     call_id = call_data["id"]
-    leg_id = call_data["legs"][0]["telephony_leg_id"]
+    leg_id = next(l["telephony_leg_id"] for l in call_data["legs"] if l["leg_role"] == "CUSTOMER")
 
     # 1. Ringing webhook
     await client.post(

@@ -151,11 +151,11 @@ def test_schema_field_parity_with_pydantic_models(openapi_spec):
     lead_openapi_props = set(schemas["LeadDTO"]["properties"].keys())
     assert lead_dto_fields == lead_openapi_props
 
-    # CallDTO parity (ensuring is_simulated is excluded from both)
+    # CallDTO parity (ensuring is_simulated is included in both)
     call_dto_fields = set(CallDTO.model_fields.keys())
     call_openapi_props = set(schemas["CallDTO"]["properties"].keys())
-    assert "is_simulated" not in call_dto_fields
-    assert "is_simulated" not in call_openapi_props
+    assert "is_simulated" in call_dto_fields
+    assert "is_simulated" in call_openapi_props
     assert call_dto_fields == call_openapi_props
 
     # CallLegDTO parity

@@ -22,6 +22,7 @@ class MockTelephonyProvider(TelephonyProvider):
     def __init__(self):
         self.dispatched_legs: List[LegDialRequest] = []
         self.terminated_legs: List[str] = []
+        self.bridged_legs: List[Dict[str, str]] = []
         self.should_fail: bool = False
         self.failure_message: str = "Simulated network failure"
 
@@ -41,7 +42,11 @@ class MockTelephonyProvider(TelephonyProvider):
         self.terminated_legs.append(telephony_leg_id)
 
     async def bridge_legs(self, call_id: str, agent_leg_id: str, customer_leg_id: str) -> None:
-        pass
+        self.bridged_legs.append({
+            "call_id": call_id,
+            "agent_leg_id": agent_leg_id,
+            "customer_leg_id": customer_leg_id,
+        })
 
     def verify_webhook_signature(
         self, raw_headers: Dict[str, str], raw_body: bytes, request_url: Optional[str] = None
