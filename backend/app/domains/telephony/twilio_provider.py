@@ -32,20 +32,67 @@ class TwilioTelephonyProvider(TelephonyProvider):
         auth_token: Optional[str] = None,
         caller_id: Optional[str] = None,
         base_url: Optional[str] = None,
+        api_key_sid: Optional[str] = None,
+        api_key_secret: Optional[str] = None,
     ):
-        self.account_sid = account_sid or settings.TWILIO_ACCOUNT_SID
-        self.auth_token = auth_token or settings.TWILIO_AUTH_TOKEN
-        self.caller_id = caller_id or settings.TWILIO_CALLER_ID
-        self.base_url = base_url or settings.PUBLIC_WEBHOOK_URL.rstrip("/")
+        self.account_sid = account_sid if account_sid is not None else settings.TWILIO_ACCOUNT_SID
+        self.auth_token = auth_token if auth_token is not None else settings.TWILIO_AUTH_TOKEN
+        self.api_key_sid = api_key_sid if api_key_sid is not None else settings.TWILIO_API_KEY_SID
+        self.api_key_secret = api_key_secret if api_key_secret is not None else settings.TWILIO_API_KEY_SECRET
+        self.caller_id = caller_id if caller_id is not None else settings.TWILIO_CALLER_ID
+        self.base_url = (base_url or settings.PUBLIC_WEBHOOK_URL).rstrip("/")
+
+    def __repr__(self) -> str:
+        key_status = "configured" if (self.api_key_sid and self.api_key_secret) else "not configured"
+        token_status = "configured" if self.auth_token else "not configured"
+        return f"<TwilioTelephonyProvider account_sid={self.account_sid!r} api_key={key_status} auth_token={token_status}>"
+
+    def get_rest_auth(self) -> tuple[str, str]:
+        """
+        Validates and returns the HTTP Basic Auth tuple (username, password) for Twilio REST API requests.
+
+        Rules:
+        1. TWILIO_ACCOUNT_SID is required for all REST operations (URL path).
+        2. If both TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET are provided, returns (api_key_sid, api_key_secret).
+        3. If only one of TWILIO_API_KEY_SID or TWILIO_API_KEY_SECRET is provided, raises ValueError.
+           Incomplete API key pairs are rejected immediately and NEVER silently fall back to TWILIO_AUTH_TOKEN.
+        4. If neither API key is provided, falls back to (account_sid, auth_token) if auth_token is provided.
+        5. If neither API key pair nor auth_token is provided, raises ValueError.
+        """
+        if not self.account_sid or not self.account_sid.strip():
+            raise ValueError(
+                "Twilio credentials not configured: TWILIO_ACCOUNT_SID is required for REST operations."
+            )
+
+        has_key_sid = bool(self.api_key_sid and self.api_key_sid.strip())
+        has_key_secret = bool(self.api_key_secret and self.api_key_secret.strip())
+
+        if has_key_sid != has_key_secret:
+            raise ValueError(
+                "Incomplete Twilio API Key configuration: both TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET "
+                "must be provided together. Incomplete API key pairs are rejected and will not fall back to TWILIO_AUTH_TOKEN."
+            )
+
+        if has_key_sid and has_key_secret:
+            return (self.api_key_sid.strip(), self.api_key_secret.strip())
+
+        if self.auth_token and self.auth_token.strip():
+            return (self.account_sid.strip(), self.auth_token.strip())
+
+        raise ValueError(
+            "Twilio REST credentials not configured: please set TWILIO_ACCOUNT_SID and either "
+            "(TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET) or TWILIO_AUTH_TOKEN."
+        )
+
+    def validate_credentials(self) -> None:
+        """Validates that credentials for REST operations are properly configured."""
+        self.get_rest_auth()
 
     async def initiate_leg(self, request: LegDialRequest) -> LegDialResponse:
         """
         Initiates a real outbound PSTN call via Twilio Calls REST endpoint.
         """
-        if not self.account_sid or not self.auth_token:
-            raise ValueError(
-                "Twilio credentials not configured. Please set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN."
-            )
+        auth = self.get_rest_auth()
 
         from_number = request.from_endpoint_uri or self.caller_id
         if not from_number:
@@ -81,7 +128,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
                 api_url,
                 content=encoded_data,
                 headers=headers,
-                auth=(self.account_sid, self.auth_token),
+                auth=auth,
             )
 
         if resp.status_code not in (200, 201):
@@ -106,7 +153,9 @@ class TwilioTelephonyProvider(TelephonyProvider):
         """
         Hangs up an active or ringing Twilio call by updating status to completed.
         """
-        if not self.account_sid or not self.auth_token:
+        auth = self.get_rest_auth()
+
+        if not telephony_leg_id:
             return
 
         api_url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{telephony_leg_id}.json"
@@ -118,7 +167,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
                 api_url,
                 content=encoded,
                 headers=headers,
-                auth=(self.account_sid, self.auth_token),
+                auth=auth,
             )
             if resp.status_code not in (200, 204):
                 # If already ended or not found, treat gracefully
@@ -129,8 +178,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
         Bridges media between agent and customer legs into a shared conference room.
         Uses Twilio's Calls API to update active legs with conference TwiML.
         """
-        if not self.account_sid or not self.auth_token:
-            raise RuntimeError("Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) not configured")
+        auth = self.get_rest_auth()
 
         if not agent_leg_id or not customer_leg_id:
             raise ValueError("Both agent_leg_id and customer_leg_id are required to bridge legs")
@@ -148,7 +196,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
                 f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{customer_leg_id}.json",
                 content=encoded,
                 headers=headers,
-                auth=(self.account_sid, self.auth_token),
+                auth=auth,
             )
             if resp_cust.status_code not in (200, 201):
                 raise RuntimeError(f"Twilio bridge failed for customer leg ({resp_cust.status_code}): {resp_cust.text}")
@@ -157,7 +205,7 @@ class TwilioTelephonyProvider(TelephonyProvider):
                 f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{agent_leg_id}.json",
                 content=encoded,
                 headers=headers,
-                auth=(self.account_sid, self.auth_token),
+                auth=auth,
             )
             if resp_agent.status_code not in (200, 201):
                 raise RuntimeError(f"Twilio bridge failed for agent leg ({resp_agent.status_code}): {resp_agent.text}")
@@ -167,6 +215,8 @@ class TwilioTelephonyProvider(TelephonyProvider):
     ) -> bool:
         """
         Validates Twilio's X-Twilio-Signature according to official security specifications.
+        Twilio webhook signatures are always verified using the primary Account Auth Token (HMAC-SHA1),
+        regardless of whether REST API operations use Restricted API Keys.
         """
         if raw_headers.get("x-mock-signature") == "invalid" or raw_headers.get("x-twilio-signature") == "invalid":
             return False

@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     # Twilio Configuration
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
+    TWILIO_API_KEY_SID: str = ""
+    TWILIO_API_KEY_SECRET: str = ""
     TWILIO_CALLER_ID: str = ""
 
     # Plivo Configuration
@@ -84,6 +86,16 @@ class Settings(BaseSettings):
                         f"Production environment with telephony provider '{self.TELEPHONY_PROVIDER}' "
                         f"requires a publicly reachable HTTPS PUBLIC_WEBHOOK_URL. Got: '{self.PUBLIC_WEBHOOK_URL}'"
                     )
+
+        # Reject incomplete API key pairs (do not silently fall back when only one is provided)
+        has_key_sid = bool(self.TWILIO_API_KEY_SID and self.TWILIO_API_KEY_SID.strip())
+        has_key_secret = bool(self.TWILIO_API_KEY_SECRET and self.TWILIO_API_KEY_SECRET.strip())
+        if has_key_sid != has_key_secret:
+            raise ValueError(
+                "Incomplete Twilio API Key configuration: both TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET "
+                "must be provided together. Cannot fall back to TWILIO_AUTH_TOKEN when partially configured."
+            )
+
         return self
 
     @computed_field
