@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "premerge": "node scripts/verify-premerge.mjs"
+    "premerge": "node scripts/verify-premerge.mjs",
+    "export:seeds": "npx tsx scripts/export-seeds.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

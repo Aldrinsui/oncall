@@ -1,0 +1,2374 @@
+openapi: 3.1.0
+info:
+  title: OnGround.ai API
+  version: 1.0.0
+  license:
+    name: Proprietary
+  description: >
+    Authoritative backend API for OnGround.ai — tele-caller workflow, multi-leg telephony orchestration,
+    real-time compliance, grounded shift intelligence, and collaboration.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local development server
+  - url: https://api.onground.ai/api/v1
+    description: Production gateway
+
+security:
+  - BearerAuth: []
+  - DevAgentAuth: []
+
+paths:
+  # ============================================================================
+  # IDENTITY DOMAIN
+  # ============================================================================
+  /agents/me:
+    get:
+      tags: [Identity]
+      summary: Get current authenticated agent profile
+      operationId: getCurrentAgent
+      responses:
+        '200':
+          description: Authenticated agent profile successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /agents/{id}:
+    get:
+      tags: [Identity]
+      summary: Get agent profile by ID
+      operationId: getAgentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Agent profile successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /agents/me/endpoint:
+    patch:
+      tags: [Identity]
+      summary: Update calling device endpoint configuration
+      operationId: updateAgentEndpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEndpointRequest'
+      responses:
+        '200':
+          description: Calling endpoint updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================================
+  # CRM DOMAIN
+  # ============================================================================
+  /customers/{id}:
+    get:
+      tags: [CRM]
+      summary: Get customer details by ID
+      operationId: getCustomerById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Customer record successfully retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /leads:
+    get:
+      tags: [CRM]
+      summary: List leads assigned to agent or store
+      operationId: listLeads
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of leads retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /leads/{id}:
+    get:
+      tags: [CRM]
+      summary: Get single lead by ID
+      operationId: getLeadById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Lead profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadDetailResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    patch:
+      tags: [CRM]
+      summary: Update lead status or notes
+      operationId: updateLead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLeadRequest'
+      responses:
+        '200':
+          description: Lead updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadDetailResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================================
+  # TELEPHONY DOMAIN
+  # ============================================================================
+  /calls/queue:
+    get:
+      tags: [Telephony]
+      summary: Get active outbound calling queue
+      operationId: getCallQueue
+      responses:
+        '200':
+          description: Calling queue retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallQueueResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /calls/recent:
+    get:
+      tags: [Telephony]
+      summary: Get recent call history for current agent
+      operationId: getRecentCalls
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Recent call history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentCallListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /calls/initiate:
+    post:
+      tags: [Telephony]
+      summary: Initiate an outbound multi-leg call
+      operationId: initiateCall
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Client-generated UUID to guarantee idempotent call initiation
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitiateCallRequest'
+      responses:
+        '201':
+          description: Call initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallDetailResponse'
+        '200':
+          description: Idempotent replay of existing call request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallDetailResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          description: Idempotency key payload mismatch or validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /calls/{id}:
+    get:
+      tags: [Telephony]
+      summary: Short-polling endpoint for active call status and leg states
+      operationId: getCallStatus
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Live call status and legs retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallDetailResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /calls/{id}/terminate:
+    post:
+      tags: [Telephony]
+      summary: Terminate/hang up active call
+      operationId: terminateCall
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Call terminated; transitions to WRAPUP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallDetailResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /calls/{id}/wrapup:
+    post:
+      tags: [Telephony]
+      summary: Submit wrap-up outcome and finalize call
+      operationId: submitWrapup
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WrapupRequest'
+      responses:
+        '200':
+          description: Call finalized into COMPLETED status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallDetailResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /calls/{id}/events:
+    get:
+      tags: [Telephony]
+      summary: Get immutable audit log of call events
+      operationId: getCallEvents
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Audit log of call events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallEventListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /calls/{id}/consent:
+    post:
+      tags: [Compliance]
+      summary: Record DPDP Act recording consent
+      operationId: recordConsent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentRequest'
+      responses:
+        '200':
+          description: Consent recorded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /calls/{id}/sop-review:
+    get:
+      tags: [Compliance]
+      summary: Retrieve SOP review for a call
+      operationId: getSopReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: SOP review details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SopReviewResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    post:
+      tags: [Compliance]
+      summary: Submit SOP checklist evaluation
+      operationId: submitSopReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitSopReviewRequest'
+      responses:
+        '200':
+          description: SOP review submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SopReviewResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /webhooks/telephony:
+    post:
+      tags: [Telephony]
+      summary: Webhook ingestion endpoint for telephony events
+      operationId: handleTelephonyWebhook
+      security: []
+      parameters:
+        - name: X-Signature
+          in: header
+          required: true
+          description: Cryptographic/HMAC signature calculated across raw HTTP body bytes
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelephonyWebhookPayload'
+      responses:
+        '200':
+          description: Webhook accepted and processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookAckResponse'
+        '401':
+          description: Invalid or missing webhook signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ============================================================================
+  # TRAINING & ROLEPLAY DOMAIN
+  # ============================================================================
+  /roleplay/history:
+    get:
+      tags: [Training]
+      summary: List past practice roleplay sessions
+      operationId: getRoleplayHistory
+      responses:
+        '200':
+          description: Roleplay session history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleplayHistoryResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /roleplay/start:
+    post:
+      tags: [Training]
+      summary: Start a new practice session with an AI persona
+      operationId: startRoleplay
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartRoleplayRequest'
+      responses:
+        '201':
+          description: Roleplay session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleplaySessionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /roleplay/{id}/turn:
+    post:
+      tags: [Training]
+      summary: Process an agent conversation turn in roleplay
+      operationId: submitRoleplayTurn
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleplayTurnRequest'
+      responses:
+        '200':
+          description: Customer response generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleplayTurnResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /roleplay/{id}/complete:
+    post:
+      tags: [Training]
+      summary: Complete roleplay practice session and generate scorecard
+      operationId: completeRoleplay
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Roleplay completed and scored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleplaySessionResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  # ============================================================================
+  # PRODUCTIVITY DOMAIN (TASKS)
+  # ============================================================================
+  /tasks:
+    get:
+      tags: [Productivity]
+      summary: List daily tasks for agent
+      operationId: listTasks
+      responses:
+        '200':
+          description: Daily task list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Productivity]
+      summary: Create new daily task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /tasks/{id}:
+    patch:
+      tags: [Productivity]
+      summary: Update task status or title
+      operationId: updateTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+      responses:
+        '200':
+          description: Task updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Productivity]
+      summary: Delete task
+      operationId: deleteTask
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Task deleted
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  # ============================================================================
+  # SCHEDULING DOMAIN (CALENDAR)
+  # ============================================================================
+  /calendar/events:
+    get:
+      tags: [Scheduling]
+      summary: List calendar sessions and meetings
+      operationId: listCalendarEvents
+      responses:
+        '200':
+          description: Calendar sessions list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarEventListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Scheduling]
+      summary: Create calendar event
+      operationId: createCalendarEvent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCalendarEventRequest'
+      responses:
+        '201':
+          description: Calendar event created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarEventResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /calendar/events/{id}:
+    patch:
+      tags: [Scheduling]
+      summary: Update calendar event
+      operationId: updateCalendarEvent
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCalendarEventRequest'
+      responses:
+        '200':
+          description: Calendar event updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarEventResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /calendar/events/{id}/invite:
+    post:
+      tags: [Scheduling]
+      summary: Invite collaborators to calendar session
+      operationId: inviteCalendarCollaborators
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteCollaboratorsRequest'
+      responses:
+        '200':
+          description: Collaborators invited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalendarEventResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================================
+  # COLLABORATION DOMAIN (PULSE)
+  # ============================================================================
+  /pulse/channels:
+    get:
+      tags: [Pulse]
+      summary: List store-authorized Pulse channels with unread counts
+      operationId: listPulseChannels
+      responses:
+        '200':
+          description: Store-scoped Pulse channels with unread counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PulseChannelListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /pulse/channels/{id}/messages:
+    get:
+      tags: [Pulse]
+      summary: Get paginated message thread for channel
+      operationId: getChannelMessages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Channel message thread
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PulseMessageListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+    post:
+      tags: [Pulse]
+      summary: Post message to Pulse channel
+      operationId: postChannelMessage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostMessageRequest'
+      responses:
+        '201':
+          description: Message posted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PulseMessageResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /pulse/channels/{id}/read:
+    post:
+      tags: [Pulse]
+      summary: Mark channel messages as read
+      operationId: markChannelRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Channel marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /pulse/channels/{id}/pinned-items:
+    get:
+      tags: [Pulse]
+      summary: Get active pinned action cards for channel
+      operationId: getPinnedItems
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active pinned action cards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinnedItemListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  /pulse/pinned-items/{id}/respond:
+    post:
+      tags: [Pulse]
+      summary: Submit persistent agent response to pinned card
+      operationId: respondToPinnedItem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinnedItemResponseRequest'
+      responses:
+        '200':
+          description: Response to pinned item persisted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ============================================================================
+  # ENGAGEMENT DOMAIN (KUDOS)
+  # ============================================================================
+  /kudos:
+    get:
+      tags: [Engagement]
+      summary: List team kudos feed
+      operationId: listKudos
+      responses:
+        '200':
+          description: Kudos feed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KudosListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+    post:
+      tags: [Engagement]
+      summary: Give kudos to peer
+      operationId: createKudos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKudosRequest'
+      responses:
+        '201':
+          description: Kudos created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KudosResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /kudos/{id}/like:
+    post:
+      tags: [Engagement]
+      summary: Toggle like on kudos post
+      operationId: toggleKudosLike
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Like toggled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KudosLikeResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  # ============================================================================
+  # SYSTEM NOTIFICATIONS
+  # ============================================================================
+  /notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Mark all notifications read
+      operationId: markAllNotificationsRead
+      responses:
+        '200':
+          description: All notifications marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications for current agent
+      operationId: listNotifications
+      responses:
+        '200':
+          description: Notification list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /notifications/{id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark single notification read
+      operationId: markNotificationRead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Notification marked as read
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AckResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+
+  # ============================================================================
+  # INTELLIGENCE & GROUNDING (DASHBOARD & AVANI)
+  # ============================================================================
+  /dashboard/metrics:
+    get:
+      tags: [Intelligence]
+      summary: Get authoritative shift metrics and progress
+      operationId: getDashboardMetrics
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Shift KPI metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardMetricsResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /dashboard/charts:
+    get:
+      tags: [Intelligence]
+      summary: Get aggregated chart data for performance trend widget
+      operationId: getDashboardCharts
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 7
+      responses:
+        '200':
+          description: 7-day chart data points
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardChartsResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /avani/query:
+    post:
+      tags: [Intelligence]
+      summary: Query grounded Avani shift assistant
+      operationId: queryAvani
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AvaniQueryRequest'
+      responses:
+        '200':
+          description: Grounded query response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvaniQueryResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+# ============================================================================
+# COMPONENTS & SCHEMAS
+# ============================================================================
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Standard production Bearer token authentication
+    DevAgentAuth:
+      type: apiKey
+      in: header
+      name: X-Dev-Agent-Id
+      description: Development-only bypass header supplying agent UUID
+
+  responses:
+    UnauthorizedError:
+      description: Authentication failed or credentials missing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    MetaEnvelope:
+      type: object
+      required: [request_id, timestamp]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorBody:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      required: [error, meta]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorBody'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    AckResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [success]
+          properties:
+            success:
+              type: boolean
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    # --- Identity DTOs ---
+    AgentDTO:
+      type: object
+      required: [id, user_id, email, full_name, role, initials, emoji, store, brand, endpoint_type, endpoint_uri, og_score, rank]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [AGENT, MANAGER, ADMIN]
+        initials:
+          type: string
+        emoji:
+          type: string
+        store:
+          type: string
+        brand:
+          type: string
+        phone_e164:
+          type: [string, "null"]
+        endpoint_type:
+          type: string
+          enum: [WEBRTC_MOCK, SIP_URI, PSTN_PHONE]
+        endpoint_uri:
+          type: string
+        og_score:
+          type: integer
+        rank:
+          type: integer
+
+    AgentResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/AgentDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    UpdateEndpointRequest:
+      type: object
+      required: [endpoint_type, endpoint_uri]
+      properties:
+        endpoint_type:
+          type: string
+          enum: [WEBRTC_MOCK, SIP_URI, PSTN_PHONE]
+        endpoint_uri:
+          type: string
+        phone_e164:
+          type: [string, "null"]
+          pattern: '^\+[1-9]\d{1,14}$'
+
+    # --- CRM DTOs ---
+    CustomerDTO:
+      type: object
+      required: [id, name, phone_e164, brand]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        phone_e164:
+          type: string
+        brand:
+          type: string
+
+    CustomerResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CustomerDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    BuyingSignalDTO:
+      type: object
+      required: [id, label, detail, icon, detected_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+        detail:
+          type: string
+        icon:
+          type: string
+        detected_at:
+          type: string
+          format: date-time
+
+    LeadDTO:
+      type: object
+      required: [id, customer_id, customer_name, customer_phone, interest, product, attractiveness_score, expected_value, badge, badge_color, status_label, icp_score, intent_score, source]
+      properties:
+        id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        customer_name:
+          type: string
+        customer_phone:
+          type: string
+        assigned_agent_id:
+          type: [string, "null"]
+          format: uuid
+        interest:
+          type: string
+        product:
+          type: string
+        cross_sell:
+          type: [string, "null"]
+        emi_note:
+          type: [string, "null"]
+        attractiveness_score:
+          type: integer
+        expected_value:
+          type: number
+        badge:
+          type: string
+        badge_color:
+          type: string
+        status_label:
+          type: string
+        icp_score:
+          type: integer
+        intent_score:
+          type: integer
+        source:
+          type: string
+        last_contact_at:
+          type: [string, "null"]
+          format: date-time
+        buying_signals:
+          type: array
+          items:
+            $ref: '#/components/schemas/BuyingSignalDTO'
+
+    LeadListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeadDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    LeadDetailResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/LeadDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    UpdateLeadRequest:
+      type: object
+      properties:
+        status_label:
+          type: string
+        notes:
+          type: string
+        assigned_agent_id:
+          type: [string, "null"]
+          format: uuid
+
+    # --- Telephony DTOs ---
+    CallLegDTO:
+      type: object
+      required: [id, leg_role, attempt_number, provider, to_endpoint_type, to_endpoint_uri, from_endpoint_type, from_endpoint_uri, status, initiated_at, duration_seconds]
+      properties:
+        id:
+          type: string
+          format: uuid
+        leg_role:
+          type: string
+          enum: [AGENT, CUSTOMER]
+        attempt_number:
+          type: integer
+        provider:
+          type: string
+        telephony_leg_id:
+          type: [string, "null"]
+        to_endpoint_type:
+          type: string
+          enum: [WEBRTC, SIP, PSTN]
+        to_endpoint_uri:
+          type: string
+        from_endpoint_type:
+          type: string
+          enum: [WEBRTC, SIP, PSTN]
+        from_endpoint_uri:
+          type: string
+        status:
+          type: string
+          enum: [INITIATING, RINGING, ANSWERED, COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED]
+        initiated_at:
+          type: string
+          format: date-time
+        answered_at:
+          type: [string, "null"]
+          format: date-time
+        ended_at:
+          type: [string, "null"]
+          format: date-time
+        duration_seconds:
+          type: integer
+
+    CallDTO:
+      type: object
+      required: [id, agent_id, customer_id, customer_name, direction, status, is_simulated, duration_seconds, legs]
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        customer_name:
+          type: string
+        lead_id:
+          type: [string, "null"]
+          format: uuid
+        direction:
+          type: string
+          enum: [OUTBOUND, INBOUND]
+        status:
+          type: string
+          enum: [QUEUED, INITIATING, AGENT_RINGING, CUSTOMER_RINGING, CONNECTED, ON_HOLD, WRAPUP, COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED]
+        is_simulated:
+          type: boolean
+        notes:
+          type: [string, "null"]
+        wrapup_outcome:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+        initiated_at:
+          type: [string, "null"]
+          format: date-time
+        connected_at:
+          type: [string, "null"]
+          format: date-time
+        ended_at:
+          type: [string, "null"]
+          format: date-time
+        duration_seconds:
+          type: integer
+        legs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CallLegDTO'
+
+    CallDetailResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CallDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    InitiateCallRequest:
+      type: object
+      required: [customer_id, direction]
+      properties:
+        customer_id:
+          type: string
+          format: uuid
+        lead_id:
+          type: [string, "null"]
+          format: uuid
+        direction:
+          type: string
+          enum: [OUTBOUND, INBOUND]
+
+    WrapupRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+        notes:
+          type: string
+
+    CallQueueItemDTO:
+      type: object
+      required: [id, name, initials, phone, wait, wait_level, intent]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        initials:
+          type: string
+        phone:
+          type: string
+        wait:
+          type: string
+        wait_level:
+          type: string
+          enum: [hi, mid, lo]
+        intent:
+          type: string
+
+    CallQueueResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CallQueueItemDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    RecentCallDTO:
+      type: object
+      required: [id, name, initials, direction, duration, time, outcome, outcome_color]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        initials:
+          type: string
+        direction:
+          type: string
+        duration:
+          type: string
+        time:
+          type: string
+        outcome:
+          type: string
+        outcome_color:
+          type: string
+        sop_score:
+          type: [integer, "null"]
+
+    RecentCallListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecentCallDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    CallEventDTO:
+      type: object
+      required: [id, call_id, event_type, occurred_at, received_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        call_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        received_at:
+          type: string
+          format: date-time
+
+    CallEventListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CallEventDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    TelephonyWebhookPayload:
+      type: object
+      required: [provider, provider_event_id, call_id, event_type, occurred_at]
+      properties:
+        provider:
+          type: string
+        provider_event_id:
+          type: string
+        call_id:
+          type: string
+          format: uuid
+        telephony_leg_id:
+          type: [string, "null"]
+        event_type:
+          type: string
+        occurred_at:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+
+    WebhookAckResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [PROCESSED, DUPLICATE_IGNORED, OUT_OF_ORDER_IGNORED]
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    # --- Compliance DTOs ---
+    ConsentRequest:
+      type: object
+      required: [status, method]
+      properties:
+        status:
+          type: string
+          enum: [GRANTED, DECLINED]
+        method:
+          type: string
+          enum: [VOICE, WHATSAPP, SMS]
+        verified_text:
+          type: [string, "null"]
+
+    ConsentDTO:
+      type: object
+      required: [id, call_id, status, method, requested_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        call_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [PENDING, GRANTED, DECLINED]
+        method:
+          type: string
+          enum: [VOICE, WHATSAPP, SMS]
+        verified_text:
+          type: [string, "null"]
+        requested_at:
+          type: string
+          format: date-time
+        consented_at:
+          type: [string, "null"]
+          format: date-time
+
+    ConsentResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/ConsentDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    SopItemReviewDTO:
+      type: object
+      required: [criterion, passed, score, evidence]
+      properties:
+        criterion:
+          type: string
+        passed:
+          type: boolean
+        score:
+          type: integer
+        evidence:
+          type: string
+
+    SopReviewDTO:
+      type: object
+      required: [call_id, overall_score, items]
+      properties:
+        call_id:
+          type: string
+          format: uuid
+        overall_score:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SopItemReviewDTO'
+
+    SopReviewResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/SopReviewDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    SubmitSopReviewRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SopItemReviewDTO'
+
+    # --- Training DTOs ---
+    StartRoleplayRequest:
+      type: object
+      required: [persona_id]
+      properties:
+        persona_id:
+          type: string
+
+    RoleplayTurnRequest:
+      type: object
+      required: [agent_speech]
+      properties:
+        agent_speech:
+          type: string
+
+    RoleplayTurnResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [customer_speech, stage, objection_detected, sop_pass]
+          properties:
+            customer_speech:
+              type: string
+            stage:
+              type: string
+            objection_detected:
+              type: boolean
+            sop_pass:
+              type: boolean
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    RoleplaySessionDTO:
+      type: object
+      required: [id, persona_id, current_stage, score, turns_count, closing_goal_met, started_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        persona_id:
+          type: string
+        current_stage:
+          type: string
+        score:
+          type: integer
+        turns_count:
+          type: integer
+        closing_goal_met:
+          type: boolean
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, "null"]
+          format: date-time
+
+    RoleplaySessionResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/RoleplaySessionDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    RoleplayHistoryResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleplaySessionDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    # --- Productivity (Tasks) DTOs ---
+    TaskDTO:
+      type: object
+      required: [id, title, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        lead_id:
+          type: [string, "null"]
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED]
+        due_date:
+          type: [string, "null"]
+          format: date
+        created_at:
+          type: string
+          format: date-time
+
+    TaskResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/TaskDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    TaskListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    CreateTaskRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        lead_id:
+          type: [string, "null"]
+          format: uuid
+        due_date:
+          type: [string, "null"]
+          format: date
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, IN_PROGRESS, BLOCKED, COMPLETED, CANCELLED]
+
+    # --- Scheduling (Calendar) DTOs ---
+    CalendarParticipantDTO:
+      type: object
+      required: [id, name, role, email_or_channel, status, is_agent]
+      properties:
+        id:
+          type: string
+          format: uuid
+        is_agent:
+          type: boolean
+        agent_id:
+          type: [string, "null"]
+          format: uuid
+        name:
+          type: string
+        role:
+          type: string
+        email_or_channel:
+          type: string
+        status:
+          type: string
+          enum: [INVITED, ACCEPTED, DECLINED, TENTATIVE]
+
+    CalendarEventDTO:
+      type: object
+      required: [id, organizer_id, title, session_slug, starts_at, ends_at, is_all_day, participants]
+      properties:
+        id:
+          type: string
+          format: uuid
+        organizer_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        location:
+          type: [string, "null"]
+        session_slug:
+          type: string
+        meta:
+          type: [string, "null"]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_all_day:
+          type: boolean
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalendarParticipantDTO'
+
+    CalendarEventResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/CalendarEventDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    CalendarEventListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CalendarEventDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    CreateCalendarEventRequest:
+      type: object
+      required: [title, starts_at, ends_at]
+      properties:
+        title:
+          type: string
+        location:
+          type: [string, "null"]
+        meta:
+          type: [string, "null"]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        is_all_day:
+          type: boolean
+          default: false
+
+    UpdateCalendarEventRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        location:
+          type: [string, "null"]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+
+    InviteCollaboratorItem:
+      type: object
+      required: [name, role, email_or_channel, is_agent]
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        email_or_channel:
+          type: string
+        is_agent:
+          type: boolean
+        agent_id:
+          type: [string, "null"]
+          format: uuid
+
+    InviteCollaboratorsRequest:
+      type: object
+      required: [collaborators]
+      properties:
+        collaborators:
+          type: array
+          items:
+            $ref: '#/components/schemas/InviteCollaboratorItem'
+
+    # --- Pulse DTOs ---
+    PulseChannelDTO:
+      type: object
+      required: [id, name, store, description, icon, color, unread_count]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        store:
+          type: string
+        description:
+          type: [string, "null"]
+        icon:
+          type: string
+        color:
+          type: string
+        unread_count:
+          type: integer
+
+    PulseChannelListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PulseChannelDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    PulseMessageDTO:
+      type: object
+      required: [id, channel_id, sender_id, sender_name, sender_initials, body, sent_at, is_current_agent]
+      properties:
+        id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        sender_name:
+          type: string
+        sender_initials:
+          type: string
+        body:
+          type: string
+        sent_at:
+          type: string
+          format: date-time
+        is_current_agent:
+          type: boolean
+
+    PulseMessageListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PulseMessageDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    PulseMessageResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/PulseMessageDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    PostMessageRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+
+    PinnedItemDTO:
+      type: object
+      required: [id, channel_id, question, options, is_answered]
+      properties:
+        id:
+          type: string
+          format: uuid
+        channel_id:
+          type: string
+          format: uuid
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        meta:
+          type: [string, "null"]
+        urgency:
+          type: string
+        is_answered:
+          type: boolean
+        selected_option:
+          type: [string, "null"]
+
+    PinnedItemListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PinnedItemDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    PinnedItemResponseRequest:
+      type: object
+      required: [selected_option]
+      properties:
+        selected_option:
+          type: string
+
+    # --- Kudos DTOs ---
+    KudosDTO:
+      type: object
+      required: [id, agent_id, agent_name, given_by_id, given_by_name, reason, created_at, likes_count, is_liked_by_me]
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        agent_name:
+          type: string
+        given_by_id:
+          type: string
+          format: uuid
+        given_by_name:
+          type: string
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        likes_count:
+          type: integer
+        is_liked_by_me:
+          type: boolean
+
+    KudosListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/KudosDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    KudosResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/KudosDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    CreateKudosRequest:
+      type: object
+      required: [agent_id, reason]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+
+    KudosLikeResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [kudos_id, likes_count, is_liked]
+          properties:
+            kudos_id:
+              type: string
+              format: uuid
+            likes_count:
+              type: integer
+            is_liked:
+              type: boolean
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    # --- Notifications DTOs ---
+    NotificationDTO:
+      type: object
+      required: [id, title, message, icon, color, cta, is_read, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        message:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+        action_type:
+          type: [string, "null"]
+        action_payload:
+          type: [string, "null"]
+        cta:
+          type: string
+        is_read:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    # --- Intelligence DTOs ---
+    DashboardMetricsDTO:
+      type: object
+      required: [shift_progress, shift_pace, avg_talk_time_seconds, conversions, earnings]
+      properties:
+        shift_progress:
+          type: object
+          required: [calls_completed, calls_total, pct]
+          properties:
+            calls_completed:
+              type: integer
+            calls_total:
+              type: integer
+            pct:
+              type: integer
+        shift_pace:
+          type: object
+          required: [status, expected_by_now, diff]
+          properties:
+            status:
+              type: string
+            expected_by_now:
+              type: integer
+            diff:
+              type: integer
+        avg_talk_time_seconds:
+          type: integer
+        conversions:
+          type: object
+          required: [count, rate]
+          properties:
+            count:
+              type: integer
+            rate:
+              type: number
+        earnings:
+          type: object
+          required: [amount, currency]
+          properties:
+            amount:
+              type: integer
+            currency:
+              type: string
+
+    DashboardMetricsResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/DashboardMetricsDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    ChartDataPointDTO:
+      type: object
+      required: [day, calls, talk_time_minutes, conversions]
+      properties:
+        day:
+          type: string
+        calls:
+          type: integer
+        talk_time_minutes:
+          type: number
+        conversions:
+          type: integer
+
+    DashboardChartsResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChartDataPointDTO'
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'
+
+    AvaniQueryRequest:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+
+    AvaniQueryResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [intent, response_text, confidence]
+          properties:
+            intent:
+              type: string
+            response_text:
+              type: string
+            confidence:
+              type: number
+            action_card:
+              type: [object, "null"]
+              additionalProperties: true
+        meta:
+          $ref: '#/components/schemas/MetaEnvelope'

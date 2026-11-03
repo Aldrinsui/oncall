@@ -3,3 +3,7 @@ dist
 .DS_Store
 *.local
 *.tsbuildinfo
+.vscode/
+__pycache__/
+*.py[cod]
+*$py.class
