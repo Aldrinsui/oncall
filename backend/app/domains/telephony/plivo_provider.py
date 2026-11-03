@@ -48,7 +48,8 @@ class PlivoTelephonyProvider(TelephonyProvider):
             raise ValueError("No valid Caller ID (From number) provided for outbound call.")
 
         api_url = f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/"
-        answer_url = f"{self.base_url}/api/v1/telephony/webhooks/plivo/answer"
+        conference_room = f"conf-{request.call_id}"
+        answer_url = f"{self.base_url}/api/v1/telephony/webhooks/plivo/conference?room={conference_room}"
         callback_url = f"{self.base_url}/api/v1/telephony/webhooks/plivo"
 
         payload = {
@@ -99,31 +100,30 @@ class PlivoTelephonyProvider(TelephonyProvider):
         Uses Plivo's Call Transfer API to transfer active legs into the conference.
         """
         if not self.auth_id or not self.auth_token:
-            return
+            raise RuntimeError("Plivo credentials (PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN) not configured")
+
+        if not agent_leg_id or not customer_leg_id:
+            raise ValueError("Both agent_leg_id and customer_leg_id are required to bridge legs")
 
         conference_room = f"conf-{call_id}"
         conf_url = f"{self.base_url}/api/v1/telephony/webhooks/plivo/conference?room={conference_room}"
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            if customer_leg_id:
-                try:
-                    await client.post(
-                        f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/{customer_leg_id}/",
-                        json={"aleg_url": conf_url, "aleg_method": "POST"},
-                        auth=(self.auth_id, self.auth_token),
-                    )
-                except Exception:
-                    pass
+            resp_cust = await client.post(
+                f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/{customer_leg_id}/",
+                json={"aleg_url": conf_url, "aleg_method": "POST"},
+                auth=(self.auth_id, self.auth_token),
+            )
+            if resp_cust.status_code not in (200, 201, 202):
+                raise RuntimeError(f"Plivo bridge failed for customer leg ({resp_cust.status_code}): {resp_cust.text}")
 
-            if agent_leg_id:
-                try:
-                    await client.post(
-                        f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/{agent_leg_id}/",
-                        json={"aleg_url": conf_url, "aleg_method": "POST"},
-                        auth=(self.auth_id, self.auth_token),
-                    )
-                except Exception:
-                    pass
+            resp_agent = await client.post(
+                f"https://api.plivo.com/v1/Account/{self.auth_id}/Call/{agent_leg_id}/",
+                json={"aleg_url": conf_url, "aleg_method": "POST"},
+                auth=(self.auth_id, self.auth_token),
+            )
+            if resp_agent.status_code not in (200, 201, 202):
+                raise RuntimeError(f"Plivo bridge failed for agent leg ({resp_agent.status_code}): {resp_agent.text}")
 
     def verify_webhook_signature(
         self, raw_headers: Dict[str, str], raw_body: bytes, request_url: Optional[str] = None

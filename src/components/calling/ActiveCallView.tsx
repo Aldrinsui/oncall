@@ -44,6 +44,7 @@ export default function ActiveCallView() {
     declineConsent,
     resetConsent,
     endCall,
+    bridgeActiveCall,
     backendCallId,
     backendCallStatus,
     backendCallDetails,
@@ -458,7 +459,15 @@ export default function ActiveCallView() {
     }
   };
 
-  const handleAnswerCall = () => {
+  const handleAnswerCall = async () => {
+    if (backendCallId) {
+      try {
+        await bridgeActiveCall();
+      } catch (err) {
+        // error notification handled by bridgeActiveCall
+      }
+      return;
+    }
     audioService.stopRinging();
     setCallState('active');
   };
@@ -640,10 +649,18 @@ export default function ActiveCallView() {
                   Calling Customer • Ringing...
                 </span>
                 {backendCallId && (
-                  <span className="text-[10px] bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                    {backendCallDetails?.is_simulated ? 'SIMULATED' : 'CARRIER'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'GATEWAY'}): {backendCallStatus || 'RINGING'} • Leg: {backendCallDetails?.legs?.[0]?.telephony_leg_id ? backendCallDetails.legs[0].telephony_leg_id.slice(0, 10) + '...' : backendCallId.slice(0, 8)}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                      {backendCallDetails?.is_simulated ? 'SIMULATED' : 'CARRIER'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'RINGING'}
+                    </span>
+                    <span className={`text-[10px] border px-2 py-0.5 rounded-full font-mono font-semibold ${backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status === 'ANSWERED' ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40' : 'bg-white/10 text-white/80 border-white/20'}`}>
+                      Agent: {backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status || 'RINGING'}
+                    </span>
+                    <span className={`text-[10px] border px-2 py-0.5 rounded-full font-mono font-semibold ${backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status === 'ANSWERED' ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40' : 'bg-white/10 text-white/80 border-white/20'}`}>
+                      Customer: {backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status || 'RINGING'}
+                    </span>
+                  </div>
                 )}
               </div>
               <h3 className="text-xl font-bold">{activeCallTarget?.name || 'Mukunda R.'}</h3>
@@ -663,10 +680,10 @@ export default function ActiveCallView() {
             </button>
             <button
               onClick={handleAnswerCall}
-              className="px-6 py-2.5 bg-og-green hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg animate-bounce transition-all"
+              className="px-6 py-2.5 bg-og-green hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all"
             >
               <Phone size={16} />
-              <span>Answer / Connect</span>
+              <span>{backendCallId ? 'Connect & Bridge Lines' : 'Answer / Connect'}</span>
             </button>
           </div>
         </div>
@@ -695,10 +712,18 @@ export default function ActiveCallView() {
                     {activeCallTarget?.phone || '+91 98450 12345'}
                   </span>
                   {backendCallId && (
-                    <span className={`text-[10px] ${backendCallDetails?.is_simulated ? 'bg-amber-500/30 text-amber-200 border-amber-400/40' : 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40'} border px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${backendCallDetails?.is_simulated ? 'bg-amber-300' : 'bg-emerald-300'}`} />
-                      {backendCallDetails?.is_simulated ? 'SIMULATED MOCK' : 'CARRIER LIVE'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'CONNECTED'}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] ${backendCallDetails?.is_simulated ? 'bg-amber-500/30 text-amber-200 border-amber-400/40' : 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40'} border px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${backendCallDetails?.is_simulated ? 'bg-amber-300' : 'bg-emerald-300'}`} />
+                        {backendCallDetails?.is_simulated ? 'SIMULATED MOCK' : 'CARRIER LIVE'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'CONNECTED'}
+                      </span>
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full font-mono">
+                        Agent: {backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status || 'ANSWERED'}
+                      </span>
+                      <span className="text-[10px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full font-mono">
+                        Customer: {backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status || 'ANSWERED'}
+                      </span>
+                    </div>
                   )}
                   {peerState === 'connected' && (
                     <span className="text-[10px] bg-teal-400 text-slate-900 px-2 py-0.5 rounded-full font-black flex items-center gap-1">

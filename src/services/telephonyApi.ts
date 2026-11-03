@@ -43,6 +43,8 @@ export interface CallDto {
 export interface InitiateCallParams {
   customerPhone: string;
   customerName?: string;
+  agentPhone?: string;
+  agentEndpointUri?: string;
   notes?: string;
   leadId?: string;
   agentId?: string;
@@ -89,6 +91,8 @@ export async function initiateOutboundCall(params: InitiateCallParams): Promise<
     body: JSON.stringify({
       customer_phone: params.customerPhone,
       customer_name: params.customerName || 'Customer',
+      agent_phone: params.agentPhone,
+      agent_endpoint_uri: params.agentEndpointUri || params.agentPhone,
       notes: params.notes,
       lead_id: params.leadId,
       agent_id: params.agentId,

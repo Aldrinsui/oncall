@@ -35,6 +35,8 @@ class CreateOutboundCallRequest(BaseModel):
     customer_id: Optional[uuid.UUID] = None
     agent_id: Optional[uuid.UUID] = None
     lead_id: Optional[uuid.UUID] = None
+    agent_phone: Optional[str] = Field(default=None, description="Optional agent phone number in E.164 format")
+    agent_endpoint_uri: Optional[str] = Field(default=None, description="Optional agent SIP or WebRTC URI or E.164 phone")
     direction: CallDirection = CallDirection.OUTBOUND
     notes: Optional[str] = Field(default=None, max_length=2000)
 
@@ -135,6 +137,12 @@ async def initiate_call(
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ve))
 
+    if payload.agent_phone:
+        try:
+            validate_e164(payload.agent_phone, "agent_phone")
+        except ValueError as ve:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(ve))
+
     service = TelephonyService(db)
     target_agent_id = payload.agent_id or agent_id
     target_customer_id = payload.customer_id or uuid.uuid4()
@@ -145,6 +153,7 @@ async def initiate_call(
             customer_id=target_customer_id,
             customer_phone=payload.customer_phone,
             customer_name=payload.customer_name or "Customer",
+            agent_endpoint_uri=payload.agent_endpoint_uri or payload.agent_phone,
             direction=payload.direction,
             lead_id=payload.lead_id,
             notes=payload.notes,
@@ -222,8 +231,12 @@ async def bridge_call(
     service = TelephonyService(db)
     try:
         call = await service.bridge_call_legs(id)
+    except LookupError as le:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(le))
     except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except RuntimeError as re:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(re))
 
     dto = model_to_dto(call)
     return CallDetailResponse(data=dto, meta=MetaEnvelope())

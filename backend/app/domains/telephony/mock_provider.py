@@ -25,6 +25,8 @@ class MockTelephonyProvider(TelephonyProvider):
         self.bridged_legs: List[Dict[str, str]] = []
         self.should_fail: bool = False
         self.failure_message: str = "Simulated network failure"
+        self.bridge_should_fail: bool = False
+        self.bridge_failure_message: str = "Simulated bridge failure"
 
     async def initiate_leg(self, request: LegDialRequest) -> LegDialResponse:
         if self.should_fail:
@@ -42,6 +44,10 @@ class MockTelephonyProvider(TelephonyProvider):
         self.terminated_legs.append(telephony_leg_id)
 
     async def bridge_legs(self, call_id: str, agent_leg_id: str, customer_leg_id: str) -> None:
+        if self.bridge_should_fail:
+            raise RuntimeError(self.bridge_failure_message)
+        if not agent_leg_id or not customer_leg_id:
+            raise ValueError("Both agent_leg_id and customer_leg_id are required.")
         self.bridged_legs.append({
             "call_id": call_id,
             "agent_leg_id": agent_leg_id,

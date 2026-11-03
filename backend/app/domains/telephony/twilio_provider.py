@@ -54,17 +54,11 @@ class TwilioTelephonyProvider(TelephonyProvider):
         api_url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls.json"
         webhook_url = f"{self.base_url}/api/v1/telephony/webhooks/twilio"
 
-        # TwiML payload played to the recipient upon answering
+        # TwiML payload connecting recipient into shared conference room upon answering
+        conference_room = f"conf-{request.call_id}"
         twiml_instruction = (
-            "<Response>"
-            "<Say voice=\"Polly.Aditi\" language=\"en-IN\">"
-            "Hello. This is a live outbound call from OnGround A I tele-caller platform. "
-            "Your call is successfully connected."
-            "</Say>"
-            "<Pause length=\"5\"/>"
-            "<Say voice=\"Polly.Aditi\" language=\"en-IN\">Thank you for testing. Good bye.</Say>"
-            "<Hangup/>"
-            "</Response>"
+            f"<Response><Dial><Conference beep=\"false\" startConferenceOnEnter=\"true\" "
+            f"endConferenceOnExit=\"true\">{conference_room}</Conference></Dial></Response>"
         )
 
         form_data = [
@@ -136,7 +130,10 @@ class TwilioTelephonyProvider(TelephonyProvider):
         Uses Twilio's Calls API to update active legs with conference TwiML.
         """
         if not self.account_sid or not self.auth_token:
-            return
+            raise RuntimeError("Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) not configured")
+
+        if not agent_leg_id or not customer_leg_id:
+            raise ValueError("Both agent_leg_id and customer_leg_id are required to bridge legs")
 
         conference_room = f"conf-{call_id}"
         bridge_twiml = (
@@ -147,27 +144,23 @@ class TwilioTelephonyProvider(TelephonyProvider):
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
         async with httpx.AsyncClient(timeout=10.0) as client:
-            if customer_leg_id:
-                try:
-                    await client.post(
-                        f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{customer_leg_id}.json",
-                        content=encoded,
-                        headers=headers,
-                        auth=(self.account_sid, self.auth_token),
-                    )
-                except Exception:
-                    pass
+            resp_cust = await client.post(
+                f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{customer_leg_id}.json",
+                content=encoded,
+                headers=headers,
+                auth=(self.account_sid, self.auth_token),
+            )
+            if resp_cust.status_code not in (200, 201):
+                raise RuntimeError(f"Twilio bridge failed for customer leg ({resp_cust.status_code}): {resp_cust.text}")
 
-            if agent_leg_id:
-                try:
-                    await client.post(
-                        f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{agent_leg_id}.json",
-                        content=encoded,
-                        headers=headers,
-                        auth=(self.account_sid, self.auth_token),
-                    )
-                except Exception:
-                    pass
+            resp_agent = await client.post(
+                f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls/{agent_leg_id}.json",
+                content=encoded,
+                headers=headers,
+                auth=(self.account_sid, self.auth_token),
+            )
+            if resp_agent.status_code not in (200, 201):
+                raise RuntimeError(f"Twilio bridge failed for agent leg ({resp_agent.status_code}): {resp_agent.text}")
 
     def verify_webhook_signature(
         self, raw_headers: Dict[str, str], raw_body: bytes, request_url: Optional[str] = None

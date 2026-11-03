@@ -123,8 +123,20 @@ class TelephonyService:
         )
 
         # 3. Create agent leg to establish complete agent/customer telecaller topology
-        agent_endpoint = agent_endpoint_uri or settings.DEV_AGENT_PHONE or "+919000000001"
-        agent_ep_type = "PSTN" if agent_endpoint.startswith("+") else "WEBRTC"
+        if settings.ENVIRONMENT == "production":
+            if not agent_endpoint_uri:
+                raise ValueError("Agent endpoint URI or phone number is required in production environment.")
+            agent_endpoint = agent_endpoint_uri
+        else:
+            agent_endpoint = agent_endpoint_uri or settings.DEV_AGENT_PHONE or "+919000000001"
+        if agent_endpoint.startswith("+"):
+            validate_e164(agent_endpoint, "agent_endpoint_uri")
+            agent_ep_type = "PSTN"
+            agent_to_endpoint_type = EndpointType.PSTN
+        else:
+            agent_ep_type = "WEBRTC"
+            agent_to_endpoint_type = EndpointType.WEBRTC
+
         agent_leg = CallLegModel(
             id=uuid.uuid4(),
             call_id=call_id,
@@ -144,8 +156,50 @@ class TelephonyService:
         self.db.add(agent_leg)
         await self.db.flush()
 
-        # 3. Dispatch outbound call through real telephony provider
-        dial_req = LegDialRequest(
+        callback_url = f"{settings.PUBLIC_WEBHOOK_URL.rstrip('/')}/api/v1/telephony/webhooks/{settings.TELEPHONY_PROVIDER}"
+
+        # 4. Step 1: Dispatch Agent Leg via provider
+        agent_dial_req = LegDialRequest(
+            call_id=str(call_id),
+            leg_role=CallLegRole.AGENT,
+            attempt_number=1,
+            to_endpoint_type=agent_to_endpoint_type,
+            to_endpoint_uri=agent_endpoint,
+            from_endpoint_type=EndpointType.PSTN,
+            from_endpoint_uri=from_phone,
+            callback_url=callback_url,
+        )
+
+        try:
+            agent_dial_res = await self.provider.initiate_leg(agent_dial_req)
+            agent_leg.telephony_leg_id = agent_dial_res.telephony_leg_id
+            agent_leg.provider = agent_dial_res.provider
+            agent_leg.status = CallLegStatus.RINGING
+        except Exception as ex:
+            call.status = CallStatus.FAILED
+            agent_leg.status = CallLegStatus.FAILED
+            agent_leg.error_message = str(ex)
+            customer_leg.status = CallLegStatus.FAILED
+            customer_leg.error_message = "Agent leg initiation failed"
+            call.ended_at = datetime.now(timezone.utc)
+
+            event = CallEventModel(
+                id=uuid.uuid4(),
+                call_id=call_id,
+                event_source="INTERNAL",
+                provider=settings.TELEPHONY_PROVIDER,
+                provider_event_id=f"fail-agent-{call_id}",
+                event_type=CallEventType.CALL_FAILED,
+                payload={"error": f"Agent leg dispatch failed: {str(ex)}"},
+                occurred_at=datetime.now(timezone.utc),
+                received_at=datetime.now(timezone.utc),
+            )
+            self.db.add(event)
+            await self.db.commit()
+            raise
+
+        # 5. Step 2: Dispatch Customer Leg via provider
+        customer_dial_req = LegDialRequest(
             call_id=str(call_id),
             leg_role=CallLegRole.CUSTOMER,
             attempt_number=1,
@@ -153,37 +207,25 @@ class TelephonyService:
             to_endpoint_uri=customer_phone,
             from_endpoint_type=EndpointType.PSTN,
             from_endpoint_uri=from_phone,
-            callback_url=f"{settings.PUBLIC_WEBHOOK_URL.rstrip('/')}/api/v1/telephony/webhooks/{settings.TELEPHONY_PROVIDER}",
+            callback_url=callback_url,
         )
 
         try:
-            dial_res = await self.provider.initiate_leg(dial_req)
-            customer_leg.telephony_leg_id = dial_res.telephony_leg_id
-            customer_leg.provider = dial_res.provider
+            cust_dial_res = await self.provider.initiate_leg(customer_dial_req)
+            customer_leg.telephony_leg_id = cust_dial_res.telephony_leg_id
+            customer_leg.provider = cust_dial_res.provider
             customer_leg.status = CallLegStatus.RINGING
-
-            # Transition parent call to CUSTOMER_RINGING
-            call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
-
-            # Record initiating event
-            event = CallEventModel(
-                id=uuid.uuid4(),
-                call_id=call_id,
-                event_source="PROVIDER",
-                provider=dial_res.provider,
-                provider_event_id=f"{dial_res.telephony_leg_id}-initiated",
-                event_type=CallEventType.LEG_INITIATING,
-                payload={"telephony_leg_id": dial_res.telephony_leg_id, "to": customer_phone},
-                occurred_at=now,
-                received_at=now,
-            )
-            self.db.add(event)
-            await self.db.commit()
-            return await self.get_call_by_id(call_id)
-
         except Exception as ex:
-            # If provider fails to dial, mark call & leg as FAILED
+            # Partial initiation failure: Clean up the already-dispatched agent leg!
+            if agent_leg.telephony_leg_id:
+                try:
+                    await self.provider.terminate_leg(agent_leg.telephony_leg_id)
+                except Exception:
+                    pass
+
             call.status = CallStatus.FAILED
+            agent_leg.status = CallLegStatus.CANCELLED
+            agent_leg.ended_at = datetime.now(timezone.utc)
             customer_leg.status = CallLegStatus.FAILED
             customer_leg.error_message = str(ex)
             call.ended_at = datetime.now(timezone.utc)
@@ -193,15 +235,45 @@ class TelephonyService:
                 call_id=call_id,
                 event_source="INTERNAL",
                 provider=settings.TELEPHONY_PROVIDER,
-                provider_event_id=f"fail-{call_id}",
+                provider_event_id=f"fail-customer-{call_id}",
                 event_type=CallEventType.CALL_FAILED,
-                payload={"error": str(ex)},
+                payload={"error": f"Customer leg dispatch failed: {str(ex)}", "agent_leg_rolled_back": True},
                 occurred_at=datetime.now(timezone.utc),
                 received_at=datetime.now(timezone.utc),
             )
             self.db.add(event)
             await self.db.commit()
             raise
+
+        # 6. Both legs dispatched successfully: Call enters AGENT_RINGING state
+        call.status = CallStateMachine.transition(call.status, CallStatus.AGENT_RINGING)
+
+        event_agent = CallEventModel(
+            id=uuid.uuid4(),
+            call_id=call_id,
+            event_source="PROVIDER",
+            provider=agent_dial_res.provider,
+            provider_event_id=f"{agent_dial_res.telephony_leg_id}-initiated",
+            event_type=CallEventType.LEG_INITIATING,
+            payload={"telephony_leg_id": agent_dial_res.telephony_leg_id, "to": agent_endpoint, "role": "AGENT"},
+            occurred_at=now,
+            received_at=now,
+        )
+        event_customer = CallEventModel(
+            id=uuid.uuid4(),
+            call_id=call_id,
+            event_source="PROVIDER",
+            provider=cust_dial_res.provider,
+            provider_event_id=f"{cust_dial_res.telephony_leg_id}-initiated",
+            event_type=CallEventType.LEG_INITIATING,
+            payload={"telephony_leg_id": cust_dial_res.telephony_leg_id, "to": customer_phone, "role": "CUSTOMER"},
+            occurred_at=now,
+            received_at=now,
+        )
+        self.db.add(event_agent)
+        self.db.add(event_customer)
+        await self.db.commit()
+        return await self.get_call_by_id(call_id)
 
     async def get_call_by_id(self, call_id: uuid.UUID) -> Optional[CallModel]:
         stmt = (
@@ -318,6 +390,17 @@ class TelephonyService:
         leg = res.scalar_one_or_none()
 
         if not leg:
+            # Check for Plivo correlation where initiate_call stored RequestUUID
+            request_uuid = raw_body_data.get("RequestUUID") or raw_body_data.get("request_uuid")
+            if request_uuid:
+                stmt_req = select(CallLegModel).where(CallLegModel.telephony_leg_id == str(request_uuid))
+                res_req = await self.db.execute(stmt_req)
+                leg = res_req.scalar_one_or_none()
+                if leg:
+                    # Correlate and update leg's telephony_leg_id to the permanent CallUUID
+                    leg.telephony_leg_id = telephony_leg_id
+
+        if not leg:
             return True, f"Unrecognized leg {telephony_leg_id}", None
 
         call = await self.get_call_by_id(leg.call_id)
@@ -347,31 +430,89 @@ class TelephonyService:
         self.db.add(call_event)
 
         # 6. Update leg and call state machine based on event type
+        agent_leg = next((l for l in call.legs if l.leg_role == CallLegRole.AGENT), None)
+        customer_leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), None)
+
         if telephony_event.event_type == CallEventType.LEG_RINGING:
             leg.status = CallLegStatus.RINGING
-            if CallStateMachine.can_transition(call.status, CallStatus.CUSTOMER_RINGING):
-                call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
+            if not leg.initiated_at:
+                leg.initiated_at = now
+            if agent_leg and agent_leg.status == CallLegStatus.ANSWERED and leg.leg_role == CallLegRole.CUSTOMER:
+                if CallStateMachine.can_transition(call.status, CallStatus.CUSTOMER_RINGING):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
 
         elif telephony_event.event_type == CallEventType.CALL_CONNECTED:
             leg.status = CallLegStatus.ANSWERED
             if not leg.answered_at:
                 leg.answered_at = now
-            if not call.connected_at:
-                call.connected_at = now
-            if CallStateMachine.can_transition(call.status, CallStatus.CONNECTED):
-                call.status = CallStateMachine.transition(call.status, CallStatus.CONNECTED)
 
-            # Bridge media between agent leg and customer leg into conference room
-            agent_leg = next((l for l in call.legs if l.leg_role == CallLegRole.AGENT), None)
-            customer_leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), None)
-            if agent_leg and customer_leg:
-                try:
-                    await adapter.bridge_legs(
-                        call_id=str(call.id),
-                        agent_leg_id=agent_leg.telephony_leg_id or "",
-                        customer_leg_id=customer_leg.telephony_leg_id or "",
+            # Check if BOTH legs have answered before transitioning call to CONNECTED
+            other_leg = customer_leg if leg.leg_role == CallLegRole.AGENT else agent_leg
+            both_answered = (
+                leg.status == CallLegStatus.ANSWERED
+                and other_leg is not None
+                and other_leg.status == CallLegStatus.ANSWERED
+            )
+
+            if both_answered:
+                # Bridge media between agent leg and customer leg into conference room
+                bridge_failed = False
+                bridge_error = ""
+                if agent_leg and customer_leg and agent_leg.telephony_leg_id and customer_leg.telephony_leg_id:
+                    try:
+                        await adapter.bridge_legs(
+                            call_id=str(call.id),
+                            agent_leg_id=agent_leg.telephony_leg_id,
+                            customer_leg_id=customer_leg.telephony_leg_id,
+                        )
+                    except Exception as bridge_ex:
+                        bridge_failed = True
+                        bridge_error = str(bridge_ex)
+
+                if bridge_failed:
+                    # Bridge failed! Terminate both legs and mark call as FAILED (do NOT mark CONNECTED)
+                    call.status = CallStatus.FAILED
+                    call.ended_at = now
+                    for l in (agent_leg, customer_leg):
+                        if l and l.telephony_leg_id:
+                            try:
+                                await adapter.terminate_leg(l.telephony_leg_id)
+                            except Exception:
+                                pass
+                            l.status = CallLegStatus.FAILED
+                            l.ended_at = now
+                            l.error_message = f"Conference bridge failed: {bridge_error}"
+
+                    err_event = CallEventModel(
+                        id=uuid.uuid4(),
+                        call_id=call.id,
+                        event_source="INTERNAL",
+                        provider=provider_name,
+                        provider_event_id=f"bridge-failed-{call.id}",
+                        event_type=CallEventType.CALL_FAILED,
+                        payload={"error": f"Conference bridge failed: {bridge_error}"},
+                        occurred_at=now,
+                        received_at=now,
                     )
-                except Exception:
+                    self.db.add(err_event)
+                else:
+                    if not call.connected_at:
+                        call.connected_at = now
+
+                    # Transition call through CUSTOMER_RINGING if currently in AGENT_RINGING
+                    if call.status == CallStatus.AGENT_RINGING:
+                        call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
+                    if CallStateMachine.can_transition(call.status, CallStatus.CONNECTED):
+                        call.status = CallStateMachine.transition(call.status, CallStatus.CONNECTED)
+            else:
+                # Only one leg answered
+                if leg.leg_role == CallLegRole.AGENT:
+                    # Agent answered first; customer is still ringing
+                    if CallStateMachine.can_transition(call.status, CallStatus.CUSTOMER_RINGING):
+                        call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
+                else:
+                    # Customer answered first; agent is still ringing
+                    # Call remains in AGENT_RINGING until agent picks up
                     pass
 
         elif telephony_event.event_type == CallEventType.CALL_COMPLETED:
@@ -381,6 +522,22 @@ class TelephonyService:
             if leg.answered_at:
                 leg.duration_seconds = max(0, int((now - ensure_utc(leg.answered_at)).total_seconds()))
 
+            # Disconnect the other leg if still active
+            other_leg = customer_leg if leg.leg_role == CallLegRole.AGENT else agent_leg
+            if other_leg and other_leg.telephony_leg_id and other_leg.status not in {
+                CallLegStatus.COMPLETED,
+                CallLegStatus.FAILED,
+                CallLegStatus.CANCELLED,
+                CallLegStatus.BUSY,
+                CallLegStatus.NO_ANSWER,
+            }:
+                try:
+                    await adapter.terminate_leg(other_leg.telephony_leg_id)
+                except Exception:
+                    pass
+                other_leg.status = CallLegStatus.COMPLETED if call.connected_at else CallLegStatus.CANCELLED
+                other_leg.ended_at = now
+
             if not call.ended_at:
                 call.ended_at = now
             if call.connected_at:
@@ -388,12 +545,29 @@ class TelephonyService:
                 if CallStateMachine.can_transition(call.status, CallStatus.WRAPUP):
                     call.status = CallStateMachine.transition(call.status, CallStatus.WRAPUP)
             else:
-                if CallStateMachine.can_transition(call.status, CallStatus.COMPLETED):
+                if CallStateMachine.can_transition(call.status, CallStatus.CANCELLED):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.CANCELLED)
+                elif CallStateMachine.can_transition(call.status, CallStatus.COMPLETED):
                     call.status = CallStateMachine.transition(call.status, CallStatus.COMPLETED)
 
         elif telephony_event.event_type in {CallEventType.CALL_BUSY, CallEventType.LEG_BUSY}:
             leg.status = CallLegStatus.BUSY
             leg.ended_at = now
+            other_leg = customer_leg if leg.leg_role == CallLegRole.AGENT else agent_leg
+            if other_leg and other_leg.telephony_leg_id and other_leg.status not in {
+                CallLegStatus.COMPLETED,
+                CallLegStatus.FAILED,
+                CallLegStatus.CANCELLED,
+                CallLegStatus.BUSY,
+                CallLegStatus.NO_ANSWER,
+            }:
+                try:
+                    await adapter.terminate_leg(other_leg.telephony_leg_id)
+                except Exception:
+                    pass
+                other_leg.status = CallLegStatus.CANCELLED
+                other_leg.ended_at = now
+
             call.ended_at = now
             if CallStateMachine.can_transition(call.status, CallStatus.BUSY):
                 call.status = CallStateMachine.transition(call.status, CallStatus.BUSY)
@@ -401,6 +575,21 @@ class TelephonyService:
         elif telephony_event.event_type in {CallEventType.CALL_NO_ANSWER, CallEventType.LEG_NO_ANSWER}:
             leg.status = CallLegStatus.NO_ANSWER
             leg.ended_at = now
+            other_leg = customer_leg if leg.leg_role == CallLegRole.AGENT else agent_leg
+            if other_leg and other_leg.telephony_leg_id and other_leg.status not in {
+                CallLegStatus.COMPLETED,
+                CallLegStatus.FAILED,
+                CallLegStatus.CANCELLED,
+                CallLegStatus.BUSY,
+                CallLegStatus.NO_ANSWER,
+            }:
+                try:
+                    await adapter.terminate_leg(other_leg.telephony_leg_id)
+                except Exception:
+                    pass
+                other_leg.status = CallLegStatus.CANCELLED
+                other_leg.ended_at = now
+
             call.ended_at = now
             if CallStateMachine.can_transition(call.status, CallStatus.NO_ANSWER):
                 call.status = CallStateMachine.transition(call.status, CallStatus.NO_ANSWER)
@@ -409,6 +598,21 @@ class TelephonyService:
             target_status = CallStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallStatus.CANCELLED
             leg.status = CallLegStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallLegStatus.CANCELLED
             leg.ended_at = now
+            other_leg = customer_leg if leg.leg_role == CallLegRole.AGENT else agent_leg
+            if other_leg and other_leg.telephony_leg_id and other_leg.status not in {
+                CallLegStatus.COMPLETED,
+                CallLegStatus.FAILED,
+                CallLegStatus.CANCELLED,
+                CallLegStatus.BUSY,
+                CallLegStatus.NO_ANSWER,
+            }:
+                try:
+                    await adapter.terminate_leg(other_leg.telephony_leg_id)
+                except Exception:
+                    pass
+                other_leg.status = CallLegStatus.CANCELLED
+                other_leg.ended_at = now
+
             call.ended_at = now
             if CallStateMachine.can_transition(call.status, target_status):
                 call.status = CallStateMachine.transition(call.status, target_status)
@@ -419,21 +623,38 @@ class TelephonyService:
     async def bridge_call_legs(self, call_id: uuid.UUID) -> CallModel:
         """
         Manually or programmatically triggers provider media bridging between active call legs.
+        Raises:
+            LookupError: If call does not exist.
+            ValueError: If legs are missing, not yet initiated, or in a terminal status.
+            RuntimeError: If provider API fails to establish conference bridge.
         """
         call = await self.get_call_by_id(call_id)
         if not call:
-            raise ValueError(f"Call {call_id} not found")
+            raise LookupError(f"Call {call_id} not found")
 
         agent_leg = next((l for l in call.legs if l.leg_role == CallLegRole.AGENT), None)
         customer_leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), None)
-        if not customer_leg:
-            raise ValueError("Customer leg not found for call")
+        if not agent_leg or not customer_leg:
+            raise ValueError("Both agent and customer legs must exist to bridge call")
+
+        if not agent_leg.telephony_leg_id or not customer_leg.telephony_leg_id:
+            raise ValueError("Both agent and customer legs must have active provider telephony leg IDs to bridge")
+
+        terminal_statuses = {
+            CallLegStatus.COMPLETED,
+            CallLegStatus.FAILED,
+            CallLegStatus.CANCELLED,
+            CallLegStatus.BUSY,
+            CallLegStatus.NO_ANSWER,
+        }
+        if agent_leg.status in terminal_statuses or customer_leg.status in terminal_statuses:
+            raise ValueError("Cannot bridge legs that are already terminated")
 
         now = datetime.now(timezone.utc)
         await self.provider.bridge_legs(
             call_id=str(call.id),
-            agent_leg_id=agent_leg.telephony_leg_id if agent_leg else "",
-            customer_leg_id=customer_leg.telephony_leg_id or "",
+            agent_leg_id=agent_leg.telephony_leg_id,
+            customer_leg_id=customer_leg.telephony_leg_id,
         )
 
         if customer_leg.status != CallLegStatus.ANSWERED:
@@ -441,11 +662,13 @@ class TelephonyService:
             if not customer_leg.answered_at:
                 customer_leg.answered_at = now
 
-        if agent_leg and agent_leg.status != CallLegStatus.ANSWERED:
+        if agent_leg.status != CallLegStatus.ANSWERED:
             agent_leg.status = CallLegStatus.ANSWERED
             if not agent_leg.answered_at:
                 agent_leg.answered_at = now
 
+        if call.status == CallStatus.AGENT_RINGING:
+            call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
         if CallStateMachine.can_transition(call.status, CallStatus.CONNECTED):
             call.status = CallStateMachine.transition(call.status, CallStatus.CONNECTED)
         if not call.connected_at:

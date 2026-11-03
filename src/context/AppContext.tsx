@@ -31,6 +31,7 @@ import {
   initiateOutboundCall,
   fetchCallStatus,
   terminateCall,
+  bridgeCall,
   type CallDto,
 } from '../services/telephonyApi';
 
@@ -79,6 +80,7 @@ interface AppContextType {
   setDialpadModalOpen: (open: boolean) => void;
   startCall: (target: CallTarget) => void;
   endCall: () => void;
+  bridgeActiveCall: () => Promise<void>;
   recentCalls: RecentCall[];
   addRecentCall: (call: RecentCall) => void;
   // Recording consent compliance (DPDP)
@@ -474,11 +476,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }, 1500);
 
       } catch (err: any) {
+        clearCallPolling();
         const msg = err?.message || 'Telephony provider connection failed';
         console.warn('Real PSTN calling dispatch note:', msg);
         setTelephonyError(msg);
-        showToast(`PSTN Calling: ${msg}`);
+        setCallState('idle'); // Clear ringing state on initiation failure
+        showToast(`PSTN Calling Failed: ${msg}`);
       }
+    }
+  };
+
+  const bridgeActiveCall = async () => {
+    if (!backendCallId) return;
+    try {
+      showToast('Bridging carrier conference lines...');
+      const updated = await bridgeCall(backendCallId);
+      setBackendCallStatus(updated.status);
+      setBackendCallDetails(updated);
+      if (updated.status === 'CONNECTED') {
+        setCallState('active');
+        showToast('Lines bridged! Two-way PSTN conversation live.');
+      }
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to bridge conference lines';
+      showToast(`Carrier Bridge Error: ${msg}`);
+      throw err;
     }
   };
 
@@ -577,7 +599,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeCallTarget, setActiveCallTarget,
       backendCallId, backendCallStatus, backendCallDetails, telephonyError,
       dialpadModalOpen, setDialpadModalOpen,
-      startCall, endCall,
+      startCall, endCall, bridgeActiveCall,
       recentCalls, addRecentCall,
       shiftProgress, shiftPace, avgTalkTime, conversions, earnings, weeklyChartData,
       dailyTasks, toggleTask,

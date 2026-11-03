@@ -496,3 +496,121 @@ async def test_bridge_call_endpoint():
         data = bridge_resp.json()["data"]
         assert data["status"] == CallStatus.CONNECTED.value
         assert data["connected_at"] is not None
+
+@pytest.mark.asyncio
+async def test_twilio_bridge_legs_error_propagation(monkeypatch):
+    """Verify Twilio provider bridge_legs raises RuntimeError when Twilio API returns error."""
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=500, text="Internal Twilio Server Error")
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = TwilioTelephonyProvider(
+        account_sid="AC_TEST",
+        auth_token="auth_token",
+        caller_id="+15551234567",
+        base_url="https://api.onground.ai",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await provider.bridge_legs("call-123", "CA_AGENT", "CA_CUST")
+    assert "Twilio bridge failed" in str(exc_info.value)
+
+@pytest.mark.asyncio
+async def test_plivo_bridge_legs_error_propagation(monkeypatch):
+    """Verify Plivo provider bridge_legs raises RuntimeError when Plivo API returns error."""
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=400, text="Invalid call leg state")
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = PlivoTelephonyProvider(
+        auth_id="MA_TEST",
+        auth_token="auth_token",
+        caller_id="+918012345678",
+        base_url="https://api.onground.ai",
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        await provider.bridge_legs("call-123", "PL_AGENT", "PL_CUST")
+    assert "Plivo bridge failed" in str(exc_info.value)
+
+@pytest.mark.asyncio
+async def test_twilio_initiate_leg_uses_conference_twiml(monkeypatch):
+    """Verify Twilio initiate_leg sends conference TwiML connecting the call directly to conf-{call_id}."""
+    captured_twiml = None
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_twiml
+        body = parse_qsl(request.content.decode("utf-8"))
+        body_dict = dict(body)
+        captured_twiml = body_dict.get("Twiml")
+        return httpx.Response(status_code=201, json={"sid": "CA_CONF_TEST"})
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = TwilioTelephonyProvider(
+        account_sid="AC_TEST",
+        auth_token="auth_token",
+        caller_id="+15551234567",
+        base_url="https://api.onground.ai",
+    )
+
+    call_id = "test-call-uuid-999"
+    req = LegDialRequest(
+        call_id=call_id,
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri="+919876543210",
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="+15551234567",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/twilio",
+    )
+
+    res = await provider.initiate_leg(req)
+    assert res.telephony_leg_id == "CA_CONF_TEST"
+    assert captured_twiml is not None
+    assert f"<Conference beep=\"false\" startConferenceOnEnter=\"true\" endConferenceOnExit=\"true\">conf-{call_id}</Conference>" in captured_twiml
+    assert "<Hangup/>" not in captured_twiml
+
+@pytest.mark.asyncio
+async def test_plivo_initiate_leg_uses_conference_answer_url(monkeypatch):
+    """Verify Plivo initiate_leg specifies answer_url joining conf-{call_id} conference room."""
+    captured_payload = None
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_payload
+        import json
+        captured_payload = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(status_code=201, json={"request_uuid": "PL_CONF_TEST"})
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    provider = PlivoTelephonyProvider(
+        auth_id="MA_TEST",
+        auth_token="auth_token",
+        caller_id="+918012345678",
+        base_url="https://api.onground.ai",
+    )
+
+    call_id = "test-plivo-call-uuid-888"
+    req = LegDialRequest(
+        call_id=call_id,
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri="+919876543210",
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="+918012345678",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/plivo",
+    )
+
+    res = await provider.initiate_leg(req)
+    assert res.telephony_leg_id == "PL_CONF_TEST"
+    assert captured_payload is not None
+    assert captured_payload["answer_url"] == f"https://api.onground.ai/api/v1/telephony/webhooks/plivo/conference?room=conf-{call_id}"
