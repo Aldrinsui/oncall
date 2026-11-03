@@ -7,6 +7,7 @@ class AudioService {
   private ringOsc2: OscillatorNode | null = null;
   private ringGain: GainNode | null = null;
   private ringInterval: number | null = null;
+  private isRinging: boolean = false;
 
   private getContext(): AudioContext {
     if (!this.ctx) {
@@ -19,51 +20,126 @@ class AudioService {
     return this.ctx;
   }
 
+  // Check if ringtone is actively running
+  getIsRinging(): boolean {
+    return this.isRinging;
+  }
+
   // Start telephone ringing tone (standard dual-frequency ring: 440Hz + 480Hz)
   startRinging() {
-    this.stopRinging();
+    if (this.isRinging) {
+      return; // Already actively ringing continuously, preserve ring cadence
+    }
+    this.isRinging = true;
+
     try {
       const ctx = this.getContext();
 
       const playBurst = () => {
-        const now = ctx.currentTime;
-        const osc1 = ctx.createOscillator();
-        const osc2 = ctx.createOscillator();
-        const gain = ctx.createGain();
+        if (!this.isRinging) return;
 
-        osc1.type = 'sine';
-        osc2.type = 'sine';
-        osc1.frequency.setValueAtTime(440, now);
-        osc2.frequency.setValueAtTime(480, now);
+        // Clean up previous burst nodes safely before starting next burst
+        this.stopActiveBurstNodes();
 
-        // Ring cadence: 1.5s ring, gentle fade out
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.15, now + 0.05);
-        gain.gain.setValueAtTime(0.15, now + 1.5);
-        gain.gain.linearRampToValueAtTime(0, now + 1.6);
+        try {
+          const now = ctx.currentTime;
+          const osc1 = ctx.createOscillator();
+          const osc2 = ctx.createOscillator();
+          const gain = ctx.createGain();
 
-        osc1.connect(gain);
-        osc2.connect(gain);
-        gain.connect(ctx.destination);
+          osc1.type = 'sine';
+          osc2.type = 'sine';
+          osc1.frequency.setValueAtTime(440, now);
+          osc2.frequency.setValueAtTime(480, now);
 
-        osc1.start(now);
-        osc2.start(now);
-        osc1.stop(now + 1.7);
-        osc2.stop(now + 1.7);
+          // Ring cadence: 1.5s ring, gentle fade out
+          gain.gain.setValueAtTime(0, now);
+          gain.gain.linearRampToValueAtTime(0.15, now + 0.05);
+          gain.gain.setValueAtTime(0.15, now + 1.5);
+          gain.gain.linearRampToValueAtTime(0, now + 1.6);
+
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ctx.destination);
+
+          this.ringOsc1 = osc1;
+          this.ringOsc2 = osc2;
+          this.ringGain = gain;
+
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + 1.7);
+          osc2.stop(now + 1.7);
+
+          osc1.onended = () => {
+            if (this.ringOsc1 === osc1) this.ringOsc1 = null;
+          };
+          osc2.onended = () => {
+            if (this.ringOsc2 === osc2) this.ringOsc2 = null;
+          };
+        } catch (e) {
+          console.warn('Audio ring burst error:', e);
+        }
       };
 
       playBurst();
-      this.ringInterval = window.setInterval(playBurst, 3500);
+      const setInt = typeof window !== 'undefined' && window.setInterval ? window.setInterval.bind(window) : setInterval;
+      this.ringInterval = setInt(playBurst, 3500) as unknown as number;
     } catch (e) {
       console.warn('Audio ring could not start automatically:', e);
     }
   }
 
+  private stopActiveBurstNodes() {
+    // Immediately ramp the active gain to zero to silence any in-flight sound
+    if (this.ringGain) {
+      try {
+        if (this.ctx) {
+          const now = this.ctx.currentTime;
+          this.ringGain.gain.cancelScheduledValues(now);
+          this.ringGain.gain.setValueAtTime(0, now);
+        }
+        this.ringGain.disconnect();
+      } catch (e) {
+        // Safe cleanup
+      }
+      this.ringGain = null;
+    }
+
+    // Safely stop and disconnect osc1
+    if (this.ringOsc1) {
+      try {
+        this.ringOsc1.onended = null;
+        this.ringOsc1.stop();
+        this.ringOsc1.disconnect();
+      } catch (e) {
+        // Safe cleanup if already stopped
+      }
+      this.ringOsc1 = null;
+    }
+
+    // Safely stop and disconnect osc2
+    if (this.ringOsc2) {
+      try {
+        this.ringOsc2.onended = null;
+        this.ringOsc2.stop();
+        this.ringOsc2.disconnect();
+      } catch (e) {
+        // Safe cleanup if already stopped
+      }
+      this.ringOsc2 = null;
+    }
+  }
+
   stopRinging() {
+    this.isRinging = false;
+
     if (this.ringInterval !== null) {
       clearInterval(this.ringInterval);
       this.ringInterval = null;
     }
+
+    this.stopActiveBurstNodes();
   }
 
   // Play pleasant call connected chime

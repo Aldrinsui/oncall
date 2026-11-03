@@ -46,6 +46,7 @@ export default function ActiveCallView() {
     declineConsent,
     resetConsent,
     endCall,
+    cancelCall,
     bridgeActiveCall,
     backendCallId,
     backendCallStatus,
@@ -147,7 +148,7 @@ export default function ActiveCallView() {
     return () => {
       audioService.stopRinging();
     };
-  }, [callState, activeCallTarget]);
+  }, [callState, activeCallTarget?.id]);
 
   // 2. WebRTC Peer Signaling Callback Registration
   useEffect(() => {
@@ -483,6 +484,7 @@ export default function ActiveCallView() {
       }
 
       try {
+        audioService.stopRinging();
         await bridgeActiveCall();
       } catch (err) {
         // error notification handled by bridgeActiveCall
@@ -491,7 +493,27 @@ export default function ActiveCallView() {
     }
   };
 
+  const handleDeclineRingingCall = async () => {
+    audioService.stopRinging();
+    audioService.playDisconnectTone();
+    speechService.stopSpeaking();
+    speechService.stopMicrophone();
+    speechService.stopSpeechRecognition();
+    webrtcService.hangup();
+    if (customerTimeoutRef.current) {
+      clearTimeout(customerTimeoutRef.current);
+      customerTimeoutRef.current = null;
+    }
+    setWrapupOpen(false);
+    setConsentModalOpen(false);
+    await cancelCall();
+  };
+
   const handleHangup = () => {
+    if (callState === 'ringing') {
+      handleDeclineRingingCall();
+      return;
+    }
     endCall();
     audioService.stopRinging();
     audioService.playDisconnectTone();
@@ -698,7 +720,7 @@ export default function ActiveCallView() {
 
           <div className="flex items-center gap-3 self-center sm:self-auto">
             <button
-              onClick={handleHangup}
+              onClick={handleDeclineRingingCall}
               className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition-colors"
             >
               <PhoneOff size={16} />

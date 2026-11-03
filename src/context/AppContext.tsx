@@ -35,6 +35,7 @@ import {
   bridgeCall,
   type CallDto,
 } from '../services/telephonyApi';
+import { audioService } from '../services/audioService';
 
 interface AppContextType {
   activeView: View;
@@ -83,6 +84,7 @@ interface AppContextType {
   setDialpadModalOpen: (open: boolean) => void;
   startRoleplay: (target: CallTarget) => void;
   startCall: (target: CallTarget) => Promise<void> | void;
+  cancelCall: () => Promise<void> | void;
   endCall: () => Promise<void> | void;
   bridgeActiveCall: () => Promise<void>;
   recentCalls: RecentCall[];
@@ -431,8 +433,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTelephonyError(null);
     // 8. Reset recording consent for the new session
     resetConsent();
-    // 9. Set callState to ringing
+    // 9. Set callState to ringing and start audible ringtone
     setCallState('ringing');
+    audioService.startRinging();
     // 10-12. Pure local simulation: zero backend or telephony provider calls
     showToast(`AI Roleplay simulator ringing for ${target.name}...`);
   };
@@ -445,6 +448,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCallingLead(target.id);
     setActiveView('plan');
     setCallState('ringing');
+    audioService.startRinging();
     setBackendCallId(null);
     setBackendCallStatus(null);
     setBackendCallDetails(null);
@@ -466,6 +470,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (!cleanPhone || !cleanPhone.startsWith('+') || !/^\+[1-9]\d{6,14}$/.test(cleanPhone)) {
       clearCallPolling();
+      audioService.stopRinging();
       setCallState('idle');
       setCallMode(null);
       const msg = 'Invalid phone number format: Destination must be in E.164 format (e.g. +919876543210)';
@@ -503,9 +508,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setBackendCallDetails(updated);
 
           if (updated.status === 'CONNECTED') {
+            audioService.stopRinging();
             setCallState('active');
           } else if (updated.status === 'WRAPUP' || updated.status === 'COMPLETED') {
             clearCallPolling();
+            audioService.stopRinging();
             setCallState('wrapup');
           } else if (
             updated.status === 'BUSY' ||
@@ -514,6 +521,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             updated.status === 'CANCELLED'
           ) {
             clearCallPolling();
+            audioService.stopRinging();
             showToast(`PSTN call ended: ${updated.status}`);
             setCallState('wrapup');
           }
@@ -524,6 +532,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     } catch (err: any) {
       clearCallPolling();
+      audioService.stopRinging();
       const msg = err?.message || 'Telephony provider connection failed';
       console.warn('Real PSTN calling dispatch note:', msg);
       setTelephonyError(msg);
@@ -531,6 +540,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCallMode(null);
       showToast(`PSTN Calling Failed: ${msg}`);
     }
+  };
+
+  const cancelCall = async () => {
+    clearCallPolling();
+    audioService.stopRinging();
+    if (callMode === 'PSTN' && backendCallId) {
+      try {
+        await terminateCall(backendCallId);
+      } catch (err) {
+        console.warn('Failed to terminate backend call leg on cancel:', err);
+      }
+    }
+    setBackendCallId(null);
+    setBackendCallStatus(null);
+    setBackendCallDetails(null);
+    setTelephonyError(null);
+    setCallingLead(null);
+    setActiveCallTarget(null);
+    setCallMode(null);
+    setCallState('idle');
   };
 
   const bridgeActiveCall = async () => {
@@ -541,6 +570,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setBackendCallStatus(updated.status);
       setBackendCallDetails(updated);
       if (updated.status === 'CONNECTED') {
+        audioService.stopRinging();
         setCallState('active');
         showToast('Lines bridged! Two-way PSTN conversation live.');
       }
@@ -553,6 +583,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const endCall = async () => {
     clearCallPolling();
+    audioService.stopRinging();
+    if (callState === 'ringing') {
+      await cancelCall();
+      return;
+    }
     // Only issue provider termination if active in PSTN mode with real backendCallId
     if (callMode === 'PSTN' && backendCallId) {
       try {
@@ -648,7 +683,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeCallTarget, setActiveCallTarget,
       backendCallId, backendCallStatus, backendCallDetails, telephonyError,
       dialpadModalOpen, setDialpadModalOpen,
-      startRoleplay, startCall, endCall, bridgeActiveCall,
+      startRoleplay, startCall, cancelCall, endCall, bridgeActiveCall,
       recentCalls, addRecentCall,
       shiftProgress, shiftPace, avgTalkTime, conversions, earnings, weeklyChartData,
       dailyTasks, toggleTask,
