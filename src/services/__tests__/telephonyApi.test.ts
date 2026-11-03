@@ -9,14 +9,14 @@ import {
 } from '../telephonyApi';
 
 describe('telephonyApi client service', () => {
-  const originalFetch = global.fetch;
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     vi.restoreAllMocks();
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
+    globalThis.fetch = originalFetch;
   });
 
   it('initiateOutboundCall sends valid payload and returns CallDto', async () => {
@@ -44,7 +44,7 @@ describe('telephonyApi client service', () => {
       ],
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: mockCallDto, meta: { request_id: 'req-1', timestamp: new Date().toISOString() } }),
     } as any);
@@ -59,7 +59,7 @@ describe('telephonyApi client service', () => {
     expect(result.status).toBe('CUSTOMER_RINGING');
     expect(result.legs[0].telephony_leg_id).toBe('CA123456789');
 
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/calls'),
       expect.objectContaining({
         method: 'POST',
@@ -72,7 +72,7 @@ describe('telephonyApi client service', () => {
   });
 
   it('initiateOutboundCall propagates backend error message on failure', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 422,
       json: async () => ({ detail: 'Invalid E.164 phone number' }),
@@ -92,7 +92,7 @@ describe('telephonyApi client service', () => {
       duration_seconds: 12,
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: mockCallDto }),
     } as any);
@@ -108,14 +108,14 @@ describe('telephonyApi client service', () => {
       status: 'WRAPUP',
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: mockCallDto }),
     } as any);
 
     const result = await terminateCall('call-1234-uuid', 'Agent finished call');
     expect(result.status).toBe('WRAPUP');
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/calls/call-1234-uuid/terminate'),
       expect.objectContaining({
         method: 'POST',
@@ -125,7 +125,7 @@ describe('telephonyApi client service', () => {
   });
 
   it('listRecentCalls retrieves call history list', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: [{ id: 'c1' }, { id: 'c2' }] }),
     } as any);
@@ -141,7 +141,7 @@ describe('telephonyApi client service', () => {
       is_simulated: false,
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: mockCallDto }),
     } as any);
@@ -149,7 +149,7 @@ describe('telephonyApi client service', () => {
     const result = await bridgeCall('call-1234-uuid');
     expect(result.status).toBe('CONNECTED');
     expect(result.is_simulated).toBe(false);
-    expect(global.fetch).toHaveBeenCalledWith(
+    expect(globalThis.fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/v1/calls/call-1234-uuid/bridge'),
       expect.objectContaining({
         method: 'POST',
