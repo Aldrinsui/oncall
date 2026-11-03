@@ -17,7 +17,13 @@ class CallStateMachine:
     PERMITTED_TRANSITIONS: Dict[CallStatus, Set[CallStatus]] = {
         CallStatus.QUEUED: {CallStatus.INITIATING, CallStatus.CANCELLED},
         CallStatus.INITIATING: {CallStatus.AGENT_RINGING, CallStatus.FAILED, CallStatus.CANCELLED},
-        CallStatus.AGENT_RINGING: {CallStatus.CUSTOMER_RINGING, CallStatus.FAILED, CallStatus.CANCELLED},
+        CallStatus.AGENT_RINGING: {
+            CallStatus.CUSTOMER_RINGING,
+            CallStatus.BUSY,
+            CallStatus.NO_ANSWER,
+            CallStatus.FAILED,
+            CallStatus.CANCELLED,
+        },
         CallStatus.CUSTOMER_RINGING: {
             CallStatus.CONNECTED,
             CallStatus.BUSY,
@@ -98,6 +104,12 @@ class CallStateMachine:
         Derives the parent Call status from its discrete call legs according to
         the Section 6b Leg-to-Call State Resolution Matrix.
         """
+        # If agent leg busy or no answer (not a generic failure)
+        if agent_leg_status == CallLegStatus.BUSY:
+            return CallStatus.BUSY
+        if agent_leg_status == CallLegStatus.NO_ANSWER:
+            return CallStatus.NO_ANSWER
+
         # If agent leg failed/cancelled
         if agent_leg_status == CallLegStatus.FAILED:
             return CallStatus.FAILED

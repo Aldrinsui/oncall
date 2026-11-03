@@ -37,6 +37,15 @@ def test_valid_forward_call_lifecycle_transitions():
     state = CallStateMachine.transition(state, CallStatus.COMPLETED)
     assert state == CallStatus.COMPLETED
 
+def test_agent_ringing_to_busy_and_no_answer_transitions():
+    """Verify transitions from AGENT_RINGING to BUSY and NO_ANSWER are permitted (P0.3)."""
+    assert CallStateMachine.can_transition(CallStatus.AGENT_RINGING, CallStatus.BUSY) is True
+    assert CallStateMachine.can_transition(CallStatus.AGENT_RINGING, CallStatus.NO_ANSWER) is True
+
+    # Execute transition
+    assert CallStateMachine.transition(CallStatus.AGENT_RINGING, CallStatus.BUSY) == CallStatus.BUSY
+    assert CallStateMachine.transition(CallStatus.AGENT_RINGING, CallStatus.NO_ANSWER) == CallStatus.NO_ANSWER
+
 def test_illegal_call_transitions_raise_error():
     """Verify prohibited transitions raise IllegalStateTransitionError."""
     # Cannot jump from QUEUED to CONNECTED
@@ -55,10 +64,20 @@ def test_illegal_call_transitions_raise_error():
     with pytest.raises(IllegalStateTransitionError):
         CallStateMachine.transition(CallStatus.CANCELLED, CallStatus.INITIATING)
 
+    # Cannot transition out of terminal state BUSY
+    with pytest.raises(IllegalStateTransitionError):
+        CallStateMachine.transition(CallStatus.BUSY, CallStatus.CONNECTED)
+
+    # Cannot transition out of terminal state NO_ANSWER
+    with pytest.raises(IllegalStateTransitionError):
+        CallStateMachine.transition(CallStatus.NO_ANSWER, CallStatus.CONNECTED)
+
 def test_idempotent_transitions_return_same_state():
     """Transitioning to the same state is an idempotent no-op."""
     assert CallStateMachine.transition(CallStatus.CONNECTED, CallStatus.CONNECTED) == CallStatus.CONNECTED
     assert CallStateMachine.transition(CallStatus.COMPLETED, CallStatus.COMPLETED) == CallStatus.COMPLETED
+    assert CallStateMachine.transition(CallStatus.BUSY, CallStatus.BUSY) == CallStatus.BUSY
+    assert CallStateMachine.transition(CallStatus.NO_ANSWER, CallStatus.NO_ANSWER) == CallStatus.NO_ANSWER
 
 def test_conditional_termination_semantics():
     """
@@ -107,3 +126,13 @@ def test_leg_to_call_resolution_matrix():
 
     # Agent leg completed/hung up -> WRAPUP
     assert CallStateMachine.resolve_call_status(CallLegStatus.COMPLETED, CallLegStatus.ANSWERED) == CallStatus.WRAPUP
+
+def test_agent_leg_busy_and_no_answer_resolution():
+    """Verify agent leg BUSY and NO_ANSWER map directly to parent BUSY and NO_ANSWER (P0.3)."""
+    # Agent leg BUSY
+    assert CallStateMachine.resolve_call_status(CallLegStatus.BUSY, None) == CallStatus.BUSY
+    assert CallStateMachine.resolve_call_status(CallLegStatus.BUSY, CallLegStatus.INITIATING) == CallStatus.BUSY
+
+    # Agent leg NO_ANSWER
+    assert CallStateMachine.resolve_call_status(CallLegStatus.NO_ANSWER, None) == CallStatus.NO_ANSWER
+    assert CallStateMachine.resolve_call_status(CallLegStatus.NO_ANSWER, CallLegStatus.INITIATING) == CallStatus.NO_ANSWER

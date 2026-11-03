@@ -1,29 +1,13 @@
 from backend.app.domains.common.enums import CallStatus
+from backend.app.domains.telephony.state_machine import CallStateMachine
 
 def determine_terminated_call_status(current_status: CallStatus) -> CallStatus:
     """
-    Calculates target status when a call termination request is received:
-    - If CONNECTED or ON_HOLD: transitions to WRAPUP (agent completes documentation).
+    Authoritatively delegates conditional call termination logic to CallStateMachine.
+
+    - If CONNECTED or ON_HOLD: transitions to WRAPUP (agent completes wrapup form).
     - If pre-connection (QUEUED, INITIATING, AGENT_RINGING, CUSTOMER_RINGING): transitions to CANCELLED.
-    - If already terminal (COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED): returns current_status idempotently.
-    - If already in WRAPUP: remains in WRAPUP.
+    - If already terminal: idempotent no-op returning current terminal state.
+    - If already in WRAPUP: returns WRAPUP.
     """
-    if current_status in {CallStatus.CONNECTED, CallStatus.ON_HOLD}:
-        return CallStatus.WRAPUP
-    if current_status in {
-        CallStatus.QUEUED,
-        CallStatus.INITIATING,
-        CallStatus.AGENT_RINGING,
-        CallStatus.CUSTOMER_RINGING,
-    }:
-        return CallStatus.CANCELLED
-    if current_status in {
-        CallStatus.COMPLETED,
-        CallStatus.FAILED,
-        CallStatus.BUSY,
-        CallStatus.NO_ANSWER,
-        CallStatus.CANCELLED,
-        CallStatus.WRAPUP,
-    }:
-        return current_status
-    return CallStatus.CANCELLED
+    return CallStateMachine.terminate(current_status)

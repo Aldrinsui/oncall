@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from backend.app.schemas.common import MetaEnvelope
 
 class PulseChannelDTO(BaseModel):
@@ -36,7 +36,9 @@ class PulseMessageResponse(BaseModel):
     meta: MetaEnvelope
 
 class PostMessageRequest(BaseModel):
-    body: str
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=5000)
 
 class PinnedItemDTO(BaseModel):
     id: UUID
@@ -53,4 +55,6 @@ class PinnedItemListResponse(BaseModel):
     meta: MetaEnvelope
 
 class PinnedItemResponseRequest(BaseModel):
-    selected_option: str
+    model_config = ConfigDict(extra="forbid")
+
+    selected_option: str = Field(min_length=1, max_length=255)

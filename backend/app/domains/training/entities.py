@@ -3,10 +3,10 @@ from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from uuid import UUID, uuid4
 
-@dataclass
+@dataclass(kw_only=True)
 class RoleplaySession:
+    agent_id: UUID
     id: UUID = field(default_factory=uuid4)
-    agent_id: UUID = field(default_factory=uuid4)
     persona_id: str = ""
     current_stage: str = "greeting"
     score: int = 0

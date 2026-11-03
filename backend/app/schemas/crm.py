@@ -8,7 +8,7 @@ from backend.app.schemas.common import MetaEnvelope
 class CustomerDTO(BaseModel):
     id: UUID
     name: str
-    phone_e164: str
+    phone_e164: str = Field(pattern=r"^\+[1-9]\d{1,14}$")
     brand: str
 
 class CustomerResponse(BaseModel):
@@ -26,7 +26,7 @@ class LeadDTO(BaseModel):
     id: UUID
     customer_id: UUID
     customer_name: str
-    customer_phone: str
+    customer_phone: str = Field(pattern=r"^\+[1-9]\d{1,14}$")
     assigned_agent_id: Optional[UUID] = None
     interest: str
     product: str

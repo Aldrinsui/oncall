@@ -5,10 +5,10 @@ from uuid import UUID, uuid4
 
 from backend.app.domains.common.enums import NotificationAction
 
-@dataclass
+@dataclass(kw_only=True)
 class Notification:
+    agent_id: UUID
     id: UUID = field(default_factory=uuid4)
-    agent_id: UUID = field(default_factory=uuid4)
     title: str = ""
     message: str = ""
     icon: str = "Bell"
@@ -20,7 +20,7 @@ class Notification:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
-        if not self.title:
+        if not self.title or not self.title.strip():
             raise ValueError("Notification title cannot be empty")
-        if not self.message:
+        if not self.message or not self.message.strip():
             raise ValueError("Notification message cannot be empty")

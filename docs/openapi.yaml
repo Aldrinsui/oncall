@@ -4,6 +4,7 @@ info:
   version: 1.0.0
   license:
     name: Proprietary
+    identifier: Proprietary
   description: >
     Authoritative backend API for OnGround.ai — tele-caller workflow, multi-leg telephony orchestration,
     real-time compliance, grounded shift intelligence, and collaboration.
@@ -15,7 +16,6 @@ servers:
 
 security:
   - BearerAuth: []
-  - DevAgentAuth: []
 
 paths:
   # ============================================================================
@@ -1167,7 +1167,10 @@ components:
       type: apiKey
       in: header
       name: X-Dev-Agent-Id
-      description: Development-only bypass header supplying agent UUID
+      description: >
+        Environment-restricted development authentication mechanism. Only accepted when
+        the server is running in local/sandbox development environments. Strictly forbidden
+        and ignored in production. Production requests MUST use BearerAuth.
 
   responses:
     UnauthorizedError:
@@ -1277,6 +1280,8 @@ components:
           type: string
         og_score:
           type: integer
+          minimum: 0
+          maximum: 100
         rank:
           type: integer
 
@@ -1372,8 +1377,11 @@ components:
           type: [string, "null"]
         attractiveness_score:
           type: integer
+          minimum: 0
+          maximum: 100
         expected_value:
           type: number
+          minimum: 0.0
         badge:
           type: string
         badge_color:
@@ -1382,8 +1390,12 @@ components:
           type: string
         icp_score:
           type: integer
+          minimum: 0
+          maximum: 100
         intent_score:
           type: integer
+          minimum: 0
+          maximum: 100
         source:
           type: string
         last_contact_at:
@@ -1438,6 +1450,7 @@ components:
           enum: [AGENT, CUSTOMER]
         attempt_number:
           type: integer
+          minimum: 1
         provider:
           type: string
         telephony_leg_id:
@@ -1466,6 +1479,7 @@ components:
           format: date-time
         duration_seconds:
           type: integer
+          minimum: 0
 
     CallDTO:
       type: object
@@ -1509,6 +1523,7 @@ components:
           format: date-time
         duration_seconds:
           type: integer
+          minimum: 0
         legs:
           type: array
           items:
@@ -1737,6 +1752,8 @@ components:
           type: boolean
         score:
           type: integer
+          minimum: 0
+          maximum: 100
         evidence:
           type: string
 
@@ -1749,6 +1766,8 @@ components:
           format: uuid
         overall_score:
           type: integer
+          minimum: 0
+          maximum: 100
         items:
           type: array
           items:
@@ -1819,8 +1838,11 @@ components:
           type: string
         score:
           type: integer
+          minimum: 0
+          maximum: 100
         turns_count:
           type: integer
+          minimum: 0
         closing_goal_met:
           type: boolean
         started_at:
@@ -2388,6 +2410,8 @@ components:
               type: string
             confidence:
               type: number
+              minimum: 0.0
+              maximum: 1.0
             action_card:
               type: [object, "null"]
               additionalProperties: true

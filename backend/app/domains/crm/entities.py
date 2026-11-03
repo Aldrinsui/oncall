@@ -4,7 +4,9 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID, uuid4
 
-@dataclass
+from backend.app.domains.common.validation import validate_e164
+
+@dataclass(kw_only=True)
 class Customer:
     id: UUID = field(default_factory=uuid4)
     name: str = ""
@@ -14,15 +16,14 @@ class Customer:
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def __post_init__(self):
-        if not self.name:
+        if not self.name or not self.name.strip():
             raise ValueError("Customer name cannot be empty")
-        if not self.phone_e164 or not self.phone_e164.startswith("+"):
-            raise ValueError(f"Customer phone must be E.164 formatted: {self.phone_e164}")
+        validate_e164(self.phone_e164, "Customer.phone_e164")
 
-@dataclass
+@dataclass(kw_only=True)
 class Lead:
+    customer_id: UUID
     id: UUID = field(default_factory=uuid4)
-    customer_id: UUID = field(default_factory=uuid4)
     assigned_agent_id: Optional[UUID] = None
     interest: str = ""
     product: str = ""
@@ -48,14 +49,18 @@ class Lead:
             raise ValueError("icp_score must be between 0 and 100")
         if not (0 <= self.intent_score <= 100):
             raise ValueError("intent_score must be between 0 and 100")
-        if self.expected_value < 0:
+        if self.expected_value < Decimal("0.00"):
             raise ValueError("expected_value must be non-negative")
 
-@dataclass
+@dataclass(kw_only=True)
 class BuyingSignal:
+    lead_id: UUID
     id: UUID = field(default_factory=uuid4)
-    lead_id: UUID = field(default_factory=uuid4)
     label: str = ""
     detail: str = ""
     icon: str = "Sparkles"
     detected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self):
+        if not self.label or not self.label.strip():
+            raise ValueError("BuyingSignal label cannot be empty")

@@ -4,8 +4,9 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 from backend.app.domains.common.enums import UserRole, AgentEndpointType
+from backend.app.domains.common.validation import validate_e164
 
-@dataclass
+@dataclass(kw_only=True)
 class User:
     id: UUID = field(default_factory=uuid4)
     email: str = ""
@@ -18,13 +19,13 @@ class User:
     def __post_init__(self):
         if not self.email or "@" not in self.email:
             raise ValueError(f"Invalid email: {self.email}")
-        if not self.full_name:
+        if not self.full_name or not self.full_name.strip():
             raise ValueError("Full name cannot be empty")
 
-@dataclass
+@dataclass(kw_only=True)
 class Agent:
+    user_id: UUID
     id: UUID = field(default_factory=uuid4)
-    user_id: UUID = field(default_factory=uuid4)
     initials: str = ""
     emoji: str = "🦸‍♂️"
     store: str = ""
@@ -40,6 +41,12 @@ class Agent:
     def __post_init__(self):
         if not (0 <= self.og_score <= 100):
             raise ValueError(f"og_score must be between 0 and 100, got {self.og_score}")
+        if self.phone_e164 is not None:
+            validate_e164(self.phone_e164, "Agent phone_e164")
         if self.endpoint_type == AgentEndpointType.PSTN_PHONE:
-            if not self.phone_e164 or not self.phone_e164.startswith("+"):
+            if not self.phone_e164:
                 raise ValueError("PSTN_PHONE endpoint requires valid E.164 phone number")
+            if self.endpoint_uri not in {self.phone_e164, f"tel:{self.phone_e164}"}:
+                raise ValueError(
+                    f"Agent endpoint_uri ({self.endpoint_uri}) must match phone_e164 ({self.phone_e164}) for PSTN_PHONE endpoint"
+                )

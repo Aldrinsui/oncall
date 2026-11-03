@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
@@ -12,14 +11,13 @@ from backend.app.domains.common.enums import (
     CallEventType,
     EndpointType,
 )
+from backend.app.domains.common.validation import validate_e164
 
-E164_REGEX = re.compile(r"^\+[1-9]\d{1,14}$")
-
-@dataclass
+@dataclass(kw_only=True)
 class Call:
+    agent_id: UUID
+    customer_id: UUID
     id: UUID = field(default_factory=uuid4)
-    agent_id: UUID = field(default_factory=uuid4)
-    customer_id: UUID = field(default_factory=uuid4)
     lead_id: Optional[UUID] = None
     direction: CallDirection = CallDirection.OUTBOUND
     status: CallStatus = CallStatus.QUEUED
@@ -51,10 +49,10 @@ class Call:
             elif not self.connected_at and self.initiated_at and self.ended_at < self.initiated_at:
                 raise ValueError("ended_at cannot precede initiated_at")
 
-@dataclass
+@dataclass(kw_only=True)
 class CallLeg:
+    call_id: UUID
     id: UUID = field(default_factory=uuid4)
-    call_id: UUID = field(default_factory=uuid4)
     leg_role: CallLegRole = CallLegRole.AGENT
     attempt_number: int = 1
     provider: str = "mock"
@@ -78,12 +76,14 @@ class CallLeg:
     def __post_init__(self):
         if self.attempt_number < 1:
             raise ValueError("attempt_number must be >= 1")
+        if not self.to_endpoint_uri or not self.to_endpoint_uri.strip():
+            raise ValueError("to_endpoint_uri cannot be empty")
+        if not self.from_endpoint_uri or not self.from_endpoint_uri.strip():
+            raise ValueError("from_endpoint_uri cannot be empty")
         if self.to_endpoint_type == EndpointType.PSTN:
-            if not E164_REGEX.match(self.to_endpoint_uri):
-                raise ValueError(f"Invalid PSTN to_endpoint_uri: {self.to_endpoint_uri}")
+            validate_e164(self.to_endpoint_uri, "CallLeg.to_endpoint_uri")
         if self.from_endpoint_type == EndpointType.PSTN:
-            if not E164_REGEX.match(self.from_endpoint_uri):
-                raise ValueError(f"Invalid PSTN from_endpoint_uri: {self.from_endpoint_uri}")
+            validate_e164(self.from_endpoint_uri, "CallLeg.from_endpoint_uri")
         if self.answered_at and self.answered_at < self.initiated_at:
             raise ValueError("answered_at cannot precede initiated_at")
         if self.ended_at:
@@ -92,10 +92,11 @@ class CallLeg:
             elif not self.answered_at and self.ended_at < self.initiated_at:
                 raise ValueError("ended_at cannot precede initiated_at")
 
-@dataclass
+@dataclass(kw_only=True)
 class CallEvent:
+    call_id: UUID
     id: UUID = field(default_factory=uuid4)
-    call_id: UUID = field(default_factory=uuid4)
+    call_leg_id: Optional[UUID] = None
     event_source: str = "MOCK"
     provider: str = "mock"
     provider_event_id: str = ""
@@ -103,3 +104,9 @@ class CallEvent:
     payload: Dict[str, Any] = field(default_factory=dict)
     occurred_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     received_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __post_init__(self):
+        if not self.provider_event_id or not self.provider_event_id.strip():
+            raise ValueError("provider_event_id cannot be empty")
+        if not self.event_source or not self.event_source.strip():
+            raise ValueError("event_source cannot be empty")

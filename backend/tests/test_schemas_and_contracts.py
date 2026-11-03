@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 from pydantic import ValidationError
 
-from backend.app.schemas.crm import UpdateLeadRequest, LeadDTO
+from backend.app.schemas.crm import UpdateLeadRequest, LeadDTO, CustomerDTO
 from backend.app.schemas.telephony import CallDTO, CallLegDTO, InitiateCallRequest
 from backend.app.schemas.identity import UpdateEndpointRequest, AgentDTO
 from backend.app.schemas.compliance import ConsentRequest
@@ -12,8 +12,13 @@ from backend.app.schemas.calendar import (
     CalendarEventDTO,
     CreateCalendarEventRequest,
     CalendarParticipantDTO,
+    InviteCollaboratorItem,
 )
 from backend.app.schemas.intelligence import AvaniQueryData
+from backend.app.schemas.tasks import CreateTaskRequest, UpdateTaskRequest
+from backend.app.schemas.pulse import PostMessageRequest, PinnedItemResponseRequest
+from backend.app.schemas.engagement import CreateKudosRequest
+from backend.app.schemas.training import StartRoleplayRequest, RoleplayTurnRequest
 from backend.app.domains.common.enums import (
     CallStatus,
     CallDirection,
@@ -57,6 +62,25 @@ def test_lead_dto_notes_and_decimal():
     assert isinstance(lead.expected_value, Decimal)
     assert lead.expected_value == Decimal("8490.00")
 
+def test_strict_e164_on_dto_phone_fields():
+    """Verify CustomerDTO and LeadDTO reject non-E.164 phone formats (P1.1)."""
+    with pytest.raises(ValidationError):
+        CustomerDTO(id=uuid4(), name="Priya", phone_e164="+abc", brand="TSC")
+
+    with pytest.raises(ValidationError):
+        LeadDTO(
+            id=uuid4(),
+            customer_id=uuid4(),
+            customer_name="Priya",
+            customer_phone="+invalid",
+            interest="Mattress",
+            product="Luxe",
+            badge="Hot",
+            badge_color="#fff",
+            status_label="New",
+            source="Walk-in",
+        )
+
 def test_call_dto_does_not_expose_is_simulated():
     """Verify CallDTO does NOT contain or expose the internal is_simulated column."""
     call_fields = CallDTO.model_fields.keys()
@@ -97,7 +121,7 @@ def test_call_leg_endpoint_types_enforced_as_enums():
         )
 
 def test_update_endpoint_request_agent_endpoint_type_and_pstn_validation():
-    """Verify UpdateEndpointRequest validates AgentEndpointType and requires phone_e164 for PSTN."""
+    """Verify UpdateEndpointRequest validates AgentEndpointType and requires phone agreement for PSTN."""
     # Valid WebRTC
     req_webrtc = UpdateEndpointRequest(
         endpoint_type=AgentEndpointType.WEBRTC_MOCK,
@@ -105,7 +129,7 @@ def test_update_endpoint_request_agent_endpoint_type_and_pstn_validation():
     )
     assert req_webrtc.endpoint_type == AgentEndpointType.WEBRTC_MOCK
 
-    # Valid PSTN with phone
+    # Valid PSTN with matching phone
     req_pstn = UpdateEndpointRequest(
         endpoint_type=AgentEndpointType.PSTN_PHONE,
         endpoint_uri="+919000000001",
@@ -119,6 +143,14 @@ def test_update_endpoint_request_agent_endpoint_type_and_pstn_validation():
             endpoint_type=AgentEndpointType.PSTN_PHONE,
             endpoint_uri="+919000000001",
             phone_e164=None,
+        )
+
+    # PSTN phone mismatch raises ValidationError
+    with pytest.raises(ValidationError):
+        UpdateEndpointRequest(
+            endpoint_type=AgentEndpointType.PSTN_PHONE,
+            endpoint_uri="+919000000001",
+            phone_e164="+919876543210",
         )
 
 def test_consent_request_only_accepts_granted_or_declined():
@@ -164,6 +196,26 @@ def test_calendar_event_chronology_and_participant_consistency():
             email_or_channel="agent@store.com",
         )
 
+    # Participant: is_agent=False rejects agent_id (P1.3)
+    with pytest.raises(ValidationError):
+        CalendarParticipantDTO(
+            id=uuid4(),
+            is_agent=False,
+            agent_id=uuid4(),
+            name="External Client",
+            role="Buyer",
+            email_or_channel="client@external.com",
+        )
+
+    with pytest.raises(ValidationError):
+        InviteCollaboratorItem(
+            name="External Client",
+            role="Buyer",
+            email_or_channel="client@external.com",
+            is_agent=False,
+            agent_id=uuid4(),
+        )
+
 def test_avani_query_confidence_constrained():
     """Verify AvaniQueryData confidence must be between 0.0 and 1.0."""
     valid = AvaniQueryData(intent="progress", response_text="Pace on track", confidence=0.92)
@@ -172,3 +224,31 @@ def test_avani_query_confidence_constrained():
     # Confidence > 1.0 raises ValidationError
     with pytest.raises(ValidationError):
         AvaniQueryData(intent="progress", response_text="Error", confidence=1.5)
+
+    # Confidence < 0.0 raises ValidationError
+    with pytest.raises(ValidationError):
+        AvaniQueryData(intent="progress", response_text="Error", confidence=-0.1)
+
+def test_extra_fields_forbidden_across_all_request_models():
+    """Verify standard extra='forbid' across all API request models (P1.4)."""
+    # Task requests
+    with pytest.raises(ValidationError):
+        CreateTaskRequest(title="Task", extra_key="blocked")
+    with pytest.raises(ValidationError):
+        UpdateTaskRequest(title="Task", extra_key="blocked")
+
+    # Pulse requests
+    with pytest.raises(ValidationError):
+        PostMessageRequest(body="Hello", extra_key="blocked")
+    with pytest.raises(ValidationError):
+        PinnedItemResponseRequest(selected_option="Yes", extra_key="blocked")
+
+    # Kudos request
+    with pytest.raises(ValidationError):
+        CreateKudosRequest(agent_id=uuid4(), reason="Good work", extra_key="blocked")
+
+    # Training requests
+    with pytest.raises(ValidationError):
+        StartRoleplayRequest(persona_id="suresh", extra_key="blocked")
+    with pytest.raises(ValidationError):
+        RoleplayTurnRequest(agent_speech="Hello", extra_key="blocked")

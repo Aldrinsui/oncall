@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 from typing import List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from backend.app.schemas.common import MetaEnvelope
 
 class KudosDTO(BaseModel):
@@ -24,8 +24,10 @@ class KudosResponse(BaseModel):
     meta: MetaEnvelope
 
 class CreateKudosRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     agent_id: UUID
-    reason: str
+    reason: str = Field(min_length=1, max_length=1000)
 
 class KudosLikeData(BaseModel):
     kudos_id: UUID

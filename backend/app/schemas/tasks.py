@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from uuid import UUID
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from backend.app.domains.common.enums import TaskStatus
 from backend.app.schemas.common import MetaEnvelope
 
@@ -22,10 +22,14 @@ class TaskListResponse(BaseModel):
     meta: MetaEnvelope
 
 class CreateTaskRequest(BaseModel):
-    title: str
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=255)
     lead_id: Optional[UUID] = None
     due_date: Optional[date] = None
 
 class UpdateTaskRequest(BaseModel):
-    title: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     status: Optional[TaskStatus] = None

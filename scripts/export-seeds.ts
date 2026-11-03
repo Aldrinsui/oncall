@@ -15,7 +15,7 @@ if (!fs.existsSync(outputDir)) {
 
 const seedPayload = {
   version: '1.0.0',
-  exportedAt: new Date().toISOString(),
+  exportedAt: process.env.SEED_EXPORT_TIMESTAMP || '2026-11-03T00:00:00.000Z',
   user: mockData.USER,
   leads: mockData.LEADS,
   recentCalls: mockData.RECENT_CALLS,

@@ -1,14 +1,18 @@
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from backend.app.schemas.common import MetaEnvelope
 
 class StartRoleplayRequest(BaseModel):
-    persona_id: str
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: str = Field(min_length=1, max_length=100)
 
 class RoleplayTurnRequest(BaseModel):
-    agent_speech: str
+    model_config = ConfigDict(extra="forbid")
+
+    agent_speech: str = Field(min_length=1, max_length=5000)
 
 class RoleplayTurnData(BaseModel):
     customer_speech: str

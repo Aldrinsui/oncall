@@ -1,11 +1,13 @@
 from backend.app.domains.common.enums import (
     UserRole,
     CallStatus,
+    CallDirection,
     CallLegRole,
     CallLegStatus,
     CallEventType,
     TaskStatus,
     ConsentState,
+    ConsentDecision,
     ConsentMethod,
     ParticipantStatus,
     NotificationAction,
@@ -14,15 +16,23 @@ from backend.app.domains.common.enums import (
     AGENT_ENDPOINT_TO_LEG_TYPE,
 )
 from backend.app.domains.common.lifecycle import determine_terminated_call_status
+from backend.app.domains.common.validation import (
+    E164_REGEX,
+    is_valid_e164,
+    validate_e164,
+    assert_timezone_aware,
+)
 
 __all__ = [
     "UserRole",
     "CallStatus",
+    "CallDirection",
     "CallLegRole",
     "CallLegStatus",
     "CallEventType",
     "TaskStatus",
     "ConsentState",
+    "ConsentDecision",
     "ConsentMethod",
     "ParticipantStatus",
     "NotificationAction",
@@ -30,4 +40,8 @@ __all__ = [
     "AgentEndpointType",
     "AGENT_ENDPOINT_TO_LEG_TYPE",
     "determine_terminated_call_status",
+    "E164_REGEX",
+    "is_valid_e164",
+    "validate_e164",
+    "assert_timezone_aware",
 ]

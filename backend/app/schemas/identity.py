@@ -33,6 +33,9 @@ class UpdateEndpointRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_pstn_phone_required(self) -> "UpdateEndpointRequest":
-        if self.endpoint_type == AgentEndpointType.PSTN_PHONE and not self.phone_e164:
-            raise ValueError("phone_e164 is required when endpoint_type is PSTN_PHONE")
+        if self.endpoint_type == AgentEndpointType.PSTN_PHONE:
+            if not self.phone_e164:
+                raise ValueError("phone_e164 is required when endpoint_type is PSTN_PHONE")
+            if self.endpoint_uri not in {self.phone_e164, f"tel:{self.phone_e164}"}:
+                raise ValueError("endpoint_uri must match phone_e164 for PSTN_PHONE endpoint")
         return self

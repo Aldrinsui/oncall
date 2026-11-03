@@ -18,6 +18,8 @@ class CalendarParticipantDTO(BaseModel):
     def validate_agent_consistency(self) -> "CalendarParticipantDTO":
         if self.is_agent and not self.agent_id:
             raise ValueError("agent_id is required when is_agent is True")
+        if not self.is_agent and self.agent_id is not None:
+            raise ValueError("agent_id must be None when is_agent is False")
         return self
 
 class CalendarEventDTO(BaseModel):
@@ -89,6 +91,8 @@ class InviteCollaboratorItem(BaseModel):
     def validate_agent_consistency(self) -> "InviteCollaboratorItem":
         if self.is_agent and not self.agent_id:
             raise ValueError("agent_id is required when is_agent is True")
+        if not self.is_agent and self.agent_id is not None:
+            raise ValueError("agent_id must be None when is_agent is False")
         return self
 
 class InviteCollaboratorsRequest(BaseModel):

@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "premerge": "node scripts/verify-premerge.mjs",
-    "export:seeds": "tsx scripts/export-seeds.ts"
+    "export:seeds": "tsx scripts/export-seeds.ts",
+    "export": "npm run export:seeds"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
