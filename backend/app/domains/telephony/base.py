@@ -1,17 +1,37 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Any
-from backend.app.domains.common.enums import CallLegRole, CallEventType
+from typing import Optional, Dict, Any, Union
+from backend.app.domains.common.enums import (
+    CallLegRole,
+    CallEventType,
+    EndpointType,
+    AgentEndpointType,
+    AGENT_ENDPOINT_TO_LEG_TYPE,
+)
+
+def resolve_agent_leg_endpoint_type(agent_endpoint_type: Union[AgentEndpointType, str]) -> EndpointType:
+    """Explicitly maps agent model endpoint type (WEBRTC_MOCK, SIP_URI, PSTN_PHONE)
+    to telephony call-leg endpoint type (WEBRTC, SIP, PSTN).
+    Prevents passing agent database enums directly into LegDialRequest."""
+    key = agent_endpoint_type.value if isinstance(agent_endpoint_type, AgentEndpointType) else str(agent_endpoint_type)
+    mapped = AGENT_ENDPOINT_TO_LEG_TYPE.get(key)
+    if mapped:
+        return mapped
+    if isinstance(agent_endpoint_type, EndpointType):
+        return agent_endpoint_type
+    if key in EndpointType.__members__:
+        return EndpointType[key]
+    raise ValueError(f"Unknown agent endpoint type: {agent_endpoint_type}")
 
 @dataclass(frozen=True)
 class LegDialRequest:
     call_id: str
     leg_role: CallLegRole
     attempt_number: int
-    to_endpoint_type: str        # 'WEBRTC', 'SIP', 'PSTN'
-    to_endpoint_uri: str         # e.g. 'webrtc:agent-dev', 'sip:agent@dev.internal', '+919876543210'
-    from_endpoint_type: str      # 'WEBRTC', 'SIP', 'PSTN'
+    to_endpoint_type: EndpointType
+    to_endpoint_uri: str
+    from_endpoint_type: EndpointType
     from_endpoint_uri: str
     callback_url: str
 

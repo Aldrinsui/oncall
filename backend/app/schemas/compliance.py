@@ -1,14 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, List
-from pydantic import BaseModel, Field
-from backend.app.domains.common.enums import ConsentState, ConsentMethod
+from pydantic import BaseModel, Field, ConfigDict
+from backend.app.domains.common.enums import ConsentState, ConsentDecision, ConsentMethod
 from backend.app.schemas.common import MetaEnvelope
 
 class ConsentRequest(BaseModel):
-    status: ConsentState
+    model_config = ConfigDict(extra="forbid")
+
+    status: ConsentDecision
     method: ConsentMethod
-    verified_text: Optional[str] = None
+    verified_text: Optional[str] = Field(default=None, max_length=2000)
 
 class ConsentDTO(BaseModel):
     id: UUID
@@ -24,10 +26,10 @@ class ConsentResponse(BaseModel):
     meta: MetaEnvelope
 
 class SopItemReviewDTO(BaseModel):
-    criterion: str
+    criterion: str = Field(min_length=1, max_length=255)
     passed: bool
     score: int = Field(default=0, ge=0, le=100)
-    evidence: str
+    evidence: str = Field(min_length=1, max_length=2000)
 
 class SopReviewDTO(BaseModel):
     call_id: UUID
@@ -39,4 +41,6 @@ class SopReviewResponse(BaseModel):
     meta: MetaEnvelope
 
 class SubmitSopReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     items: List[SopItemReviewDTO]

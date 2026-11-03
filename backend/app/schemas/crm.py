@@ -1,7 +1,8 @@
 from datetime import datetime
+from decimal import Decimal
 from uuid import UUID
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from backend.app.schemas.common import MetaEnvelope
 
 class CustomerDTO(BaseModel):
@@ -31,8 +32,9 @@ class LeadDTO(BaseModel):
     product: str
     cross_sell: Optional[str] = None
     emi_note: Optional[str] = None
+    notes: Optional[str] = None
     attractiveness_score: int = Field(default=50, ge=0, le=100)
-    expected_value: float = Field(default=0.0, ge=0.0)
+    expected_value: Decimal = Field(default_factory=lambda: Decimal("0.00"), ge=Decimal("0.00"))
     badge: str
     badge_color: str
     status_label: str
@@ -51,6 +53,8 @@ class LeadDetailResponse(BaseModel):
     meta: MetaEnvelope
 
 class UpdateLeadRequest(BaseModel):
-    status_label: Optional[str] = None
-    notes: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    status_label: Optional[str] = Field(default=None, max_length=100)
+    notes: Optional[str] = Field(default=None, max_length=2000)
     assigned_agent_id: Optional[UUID] = None

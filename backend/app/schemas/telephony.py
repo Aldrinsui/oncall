@@ -1,12 +1,14 @@
 from datetime import datetime
 from uuid import UUID
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from backend.app.domains.common.enums import (
     CallStatus,
+    CallDirection,
     CallLegRole,
     CallLegStatus,
     CallEventType,
+    EndpointType,
 )
 from backend.app.schemas.common import MetaEnvelope
 
@@ -16,9 +18,9 @@ class CallLegDTO(BaseModel):
     attempt_number: int = Field(default=1, ge=1)
     provider: str
     telephony_leg_id: Optional[str] = None
-    to_endpoint_type: str
+    to_endpoint_type: EndpointType
     to_endpoint_uri: str
-    from_endpoint_type: str
+    from_endpoint_type: EndpointType
     from_endpoint_uri: str
     status: CallLegStatus
     initiated_at: datetime
@@ -32,9 +34,8 @@ class CallDTO(BaseModel):
     customer_id: UUID
     customer_name: str
     lead_id: Optional[UUID] = None
-    direction: str
+    direction: CallDirection
     status: CallStatus
-    is_simulated: bool = True
     notes: Optional[str] = None
     wrapup_outcome: Optional[str] = None
     created_at: datetime
@@ -49,13 +50,17 @@ class CallDetailResponse(BaseModel):
     meta: MetaEnvelope
 
 class InitiateCallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     customer_id: UUID
     lead_id: Optional[UUID] = None
-    direction: str = "OUTBOUND"
+    direction: CallDirection = CallDirection.OUTBOUND
 
 class WrapupRequest(BaseModel):
-    outcome: str
-    notes: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str = Field(min_length=1, max_length=100)
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 class CallQueueItemDTO(BaseModel):
     id: UUID
@@ -74,7 +79,7 @@ class RecentCallDTO(BaseModel):
     id: UUID
     name: str
     initials: str
-    direction: str
+    direction: CallDirection
     duration: str
     time: str
     outcome: str
@@ -97,11 +102,13 @@ class CallEventListResponse(BaseModel):
     meta: MetaEnvelope
 
 class TelephonyWebhookPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     provider: str
     provider_event_id: str
     call_id: UUID
     telephony_leg_id: Optional[str] = None
-    event_type: str
+    event_type: CallEventType
     occurred_at: datetime
     payload: Dict[str, Any] = Field(default_factory=dict)
 

@@ -305,7 +305,12 @@ paths:
   /calls/{id}/terminate:
     post:
       tags: [Telephony]
-      summary: Terminate/hang up active call
+      summary: Terminate/hang up call
+      description: >
+        Terminates the call according to conditional lifecycle rules:
+        - Connected and on-hold calls (CONNECTED, ON_HOLD) transition to WRAPUP for post-call documentation.
+        - Pre-connection calls (QUEUED, INITIATING, AGENT_RINGING, CUSTOMER_RINGING) transition to CANCELLED.
+        - Already terminal calls (COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED) return their existing terminal record idempotently.
       operationId: terminateCall
       parameters:
         - name: id
@@ -316,7 +321,7 @@ paths:
             format: uuid
       responses:
         '200':
-          description: Call terminated; transitions to WRAPUP
+          description: Call terminated; returns updated call in WRAPUP, CANCELLED, or terminal state
           content:
             application/json:
               schema:
@@ -835,6 +840,8 @@ paths:
                 $ref: '#/components/schemas/PulseMessageListResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
     post:
@@ -863,6 +870,8 @@ paths:
                 $ref: '#/components/schemas/PulseMessageResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '422':
@@ -889,6 +898,8 @@ paths:
                 $ref: '#/components/schemas/AckResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
 
@@ -913,6 +924,8 @@ paths:
                 $ref: '#/components/schemas/PinnedItemListResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
 
@@ -943,6 +956,8 @@ paths:
                 $ref: '#/components/schemas/AckResponse'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
         '404':
           $ref: '#/components/responses/NotFoundError'
         '422':
@@ -1161,6 +1176,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    ForbiddenError:
+      description: Access forbidden — store authorization failed or insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     NotFoundError:
       description: Resource not found
       content:
@@ -1347,6 +1368,8 @@ components:
           type: [string, "null"]
         emi_note:
           type: [string, "null"]
+        notes:
+          type: [string, "null"]
         attractiveness_score:
           type: integer
         expected_value:
@@ -1446,7 +1469,7 @@ components:
 
     CallDTO:
       type: object
-      required: [id, agent_id, customer_id, customer_name, direction, status, is_simulated, duration_seconds, legs]
+      required: [id, agent_id, customer_id, customer_name, direction, status, duration_seconds, legs]
       properties:
         id:
           type: string
@@ -1468,8 +1491,6 @@ components:
         status:
           type: string
           enum: [QUEUED, INITIATING, AGENT_RINGING, CUSTOMER_RINGING, CONNECTED, ON_HOLD, WRAPUP, COMPLETED, FAILED, BUSY, NO_ANSWER, CANCELLED]
-        is_simulated:
-          type: boolean
         notes:
           type: [string, "null"]
         wrapup_outcome:

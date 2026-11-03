@@ -5,6 +5,10 @@ class UserRole(str, Enum):
     MANAGER = "MANAGER"
     ADMIN = "ADMIN"
 
+class CallDirection(str, Enum):
+    OUTBOUND = "OUTBOUND"
+    INBOUND = "INBOUND"
+
 class CallStatus(str, Enum):
     QUEUED = "QUEUED"
     INITIATING = "INITIATING"
@@ -61,6 +65,10 @@ class ConsentState(str, Enum):
     GRANTED = "GRANTED"
     DECLINED = "DECLINED"
 
+class ConsentDecision(str, Enum):
+    GRANTED = "GRANTED"
+    DECLINED = "DECLINED"
+
 class ConsentMethod(str, Enum):
     VOICE = "VOICE"
     WHATSAPP = "WHATSAPP"
@@ -83,3 +91,14 @@ class EndpointType(str, Enum):
     WEBRTC = "WEBRTC"
     SIP = "SIP"
     PSTN = "PSTN"
+
+class AgentEndpointType(str, Enum):
+    WEBRTC_MOCK = "WEBRTC_MOCK"
+    SIP_URI = "SIP_URI"
+    PSTN_PHONE = "PSTN_PHONE"
+
+AGENT_ENDPOINT_TO_LEG_TYPE: dict[str, EndpointType] = {
+    AgentEndpointType.WEBRTC_MOCK.value: EndpointType.WEBRTC,
+    AgentEndpointType.SIP_URI.value: EndpointType.SIP,
+    AgentEndpointType.PSTN_PHONE.value: EndpointType.PSTN,
+}

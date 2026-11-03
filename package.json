@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "premerge": "node scripts/verify-premerge.mjs",
-    "export:seeds": "npx tsx scripts/export-seeds.ts"
+    "export:seeds": "tsx scripts/export-seeds.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -25,6 +25,7 @@
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.19.2",
     "typescript": "~5.6.2",
     "vite": "^6.0.5",
     "vitest": "^5.1.0"
