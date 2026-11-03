@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import json
+import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
@@ -143,13 +144,15 @@ class ExotelTelephonyProvider(TelephonyProvider):
         if not to_number:
             raise ValueError("No valid To number (customer phone) provided for outbound Exotel call.")
 
+        clean_caller_id = re.sub(r"[^\d+]", "", effective_caller_id)
         api_url = f"{self.api_base_url}/v1/Accounts/{self.account_sid}/Calls/connect"
         webhook_url = callback_url or f"{self.webhook_base_url}/api/v1/telephony/webhooks/exotel"
 
         data = {
             "From": from_number,
             "To": to_number,
-            "CallerId": effective_caller_id,
+            "CallerId": clean_caller_id,
+            "CallType": "trans",
             "StatusCallback": webhook_url,
             "StatusCallbackEvents": ["terminal", "answered"],
             "CustomField": call_id,
