@@ -818,7 +818,7 @@ async def test_exotel_http_successful_call_creation(monkeypatch):
     assert params["CustomField"] == ["call-uuid-exotel-1"]
     assert params["TimeLimit"] == ["300"]
     assert "https://api.onground.ai/api/v1/telephony/webhooks/exotel" in params["StatusCallback"][0]
-    assert params["StatusCallbackEvents"] == ["both"]
+    assert "StatusCallbackEvents" not in params
 
     # Verify HTTP Basic Auth header
     auth_header = req_obj.headers.get("authorization", "")
@@ -1140,6 +1140,7 @@ async def test_exotel_full_orchestrated_call_flow_and_lifecycle(monkeypatch):
         assert form_params["CallerId"] == [caller_id]
         assert form_params["CustomField"] == [call_id]
         assert form_params["TimeLimit"] == ["300"]
+        assert "StatusCallbackEvents" not in form_params
 
         # Logical agent and customer legs preserved with Call.Sid
         assert len(call_data["legs"]) == 2

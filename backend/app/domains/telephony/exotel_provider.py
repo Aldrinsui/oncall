@@ -154,7 +154,6 @@ class ExotelTelephonyProvider(TelephonyProvider):
             "CallerId": clean_caller_id,
             "CallType": "trans",
             "StatusCallback": webhook_url,
-            "StatusCallbackEvents": "both",
             "CustomField": call_id,
             "TimeLimit": str(time_limit),
         }
