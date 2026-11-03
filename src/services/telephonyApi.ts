@@ -50,7 +50,7 @@ export interface InitiateCallParams {
   agentId?: string;
 }
 
-const getApiBaseUrl = (): string => {
+export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && (window as any).__ONCALL_API_URL__) {
     return (window as any).__ONCALL_API_URL__;
   }
@@ -81,11 +81,57 @@ const getHeaders = (): HeadersInit => {
 };
 
 /**
+ * Robust JSON request wrapper that validates response content types and provides
+ * clear, actionable error messages if the backend is unreachable or returning HTML (e.g. Vercel SPA rewrites).
+ */
+async function requestJson<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}${endpoint}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, options);
+  } catch (netErr: any) {
+    throw new Error(
+      `FastAPI backend unreachable at ${url || 'http://localhost:8000'}. ` +
+      `Please ensure your backend server is running: 'uvicorn backend.app.main:app --reload --port 8000' ` +
+      `(${netErr?.message || 'Connection refused'})`
+    );
+  }
+
+  const contentType = res.headers?.get ? (res.headers.get('content-type') || '') : 'application/json';
+  if (!contentType.includes('application/json')) {
+    const rawText = await res.text();
+    if (rawText.includes('<!DOCTYPE') || rawText.includes('<html') || rawText.includes('<head')) {
+      throw new Error(
+        `Backend returned HTML instead of JSON from ${endpoint}. ` +
+        `This occurs when running on Vercel without a configured VITE_BACKEND_API_URL, or when the local dev proxy ` +
+        `cannot reach port 8000. Start FastAPI via 'uvicorn backend.app.main:app --reload --port 8000'.`
+      );
+    }
+    throw new Error(`Unexpected non-JSON response from backend (status ${res.status}): ${rawText.slice(0, 150)}`);
+  }
+
+  let json: any;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`Failed to parse backend JSON response from ${endpoint} (HTTP ${res.status})`);
+  }
+
+  if (!res.ok) {
+    const errMessage = json?.detail || json?.message || `HTTP ${res.status} Error from telephony service`;
+    throw new Error(typeof errMessage === 'string' ? errMessage : JSON.stringify(errMessage));
+  }
+
+  return json;
+}
+
+/**
  * Initiates an authentic outbound PSTN phone call via the backend telephony provider (Twilio/Plivo).
  */
 export async function initiateOutboundCall(params: InitiateCallParams): Promise<CallDto> {
-  const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/v1/calls`, {
+  const json = await requestJson<{ data: CallDto }>('/api/v1/calls', {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify({
@@ -100,18 +146,6 @@ export async function initiateOutboundCall(params: InitiateCallParams): Promise<
     }),
   });
 
-  if (!res.ok) {
-    let errMessage = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      errMessage = errJson.detail || errJson.message || errMessage;
-    } catch {
-      // ignore
-    }
-    throw new Error(errMessage);
-  }
-
-  const json = await res.json();
   return json.data;
 }
 
@@ -119,24 +153,11 @@ export async function initiateOutboundCall(params: InitiateCallParams): Promise<
  * Fetches the current live status and legs of a call.
  */
 export async function fetchCallStatus(callId: string): Promise<CallDto> {
-  const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/v1/calls/${callId}`, {
+  const json = await requestJson<{ data: CallDto }>(`/api/v1/calls/${callId}`, {
     method: 'GET',
     headers: getHeaders(),
   });
 
-  if (!res.ok) {
-    let errMessage = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      errMessage = errJson.detail || errJson.message || errMessage;
-    } catch {
-      // ignore
-    }
-    throw new Error(errMessage);
-  }
-
-  const json = await res.json();
   return json.data;
 }
 
@@ -144,8 +165,7 @@ export async function fetchCallStatus(callId: string): Promise<CallDto> {
  * Terminates an ongoing or ringing PSTN call.
  */
 export async function terminateCall(callId: string, reason?: string): Promise<CallDto> {
-  const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/v1/calls/${callId}/terminate`, {
+  const json = await requestJson<{ data: CallDto }>(`/api/v1/calls/${callId}/terminate`, {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify({
@@ -153,18 +173,6 @@ export async function terminateCall(callId: string, reason?: string): Promise<Ca
     }),
   });
 
-  if (!res.ok) {
-    let errMessage = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      errMessage = errJson.detail || errJson.message || errMessage;
-    } catch {
-      // ignore
-    }
-    throw new Error(errMessage);
-  }
-
-  const json = await res.json();
   return json.data;
 }
 
@@ -172,41 +180,25 @@ export async function terminateCall(callId: string, reason?: string): Promise<Ca
  * Retrieves the recent call log from the backend database.
  */
 export async function listRecentCalls(): Promise<CallDto[]> {
-  const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/v1/calls`, {
-    method: 'GET',
-    headers: getHeaders(),
-  });
-
-  if (!res.ok) {
+  try {
+    const json = await requestJson<{ data: CallDto[] }>('/api/v1/calls', {
+      method: 'GET',
+      headers: getHeaders(),
+    });
+    return json.data || [];
+  } catch {
     return [];
   }
-
-  const json = await res.json();
-  return json.data || [];
 }
 
 /**
  * Bridges active agent and customer legs into a shared conference room.
  */
 export async function bridgeCall(callId: string): Promise<CallDto> {
-  const baseUrl = getApiBaseUrl();
-  const res = await fetch(`${baseUrl}/api/v1/calls/${callId}/bridge`, {
+  const json = await requestJson<{ data: CallDto }>(`/api/v1/calls/${callId}/bridge`, {
     method: 'POST',
     headers: getHeaders(),
   });
 
-  if (!res.ok) {
-    let errMessage = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      errMessage = errJson.detail || errJson.message || errMessage;
-    } catch {
-      // ignore
-    }
-    throw new Error(errMessage);
-  }
-
-  const json = await res.json();
   return json.data;
 }

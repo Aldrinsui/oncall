@@ -46,6 +46,7 @@ describe('telephonyApi client service', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'application/json' },
       json: async () => ({ data: mockCallDto, meta: { request_id: 'req-1', timestamp: new Date().toISOString() } }),
     } as any);
 
@@ -75,6 +76,7 @@ describe('telephonyApi client service', () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 422,
+      headers: { get: () => 'application/json' },
       json: async () => ({ detail: 'Invalid E.164 phone number' }),
     } as any);
 
@@ -83,6 +85,31 @@ describe('telephonyApi client service', () => {
         customerPhone: 'invalid-number',
       })
     ).rejects.toThrow('Invalid E.164 phone number');
+  });
+
+  it('detects HTML responses from Vercel/Vite when backend is unreachable and throws helpful message', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'text/html' },
+      text: async () => '<!DOCTYPE html><html><head><title>Vite App</title></head><body><div id="root"></div></body></html>',
+    } as any);
+
+    await expect(
+      initiateOutboundCall({
+        customerPhone: '+919876543210',
+      })
+    ).rejects.toThrow(/Backend returned HTML instead of JSON/);
+  });
+
+  it('handles connection refused network errors with clear instructions', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+
+    await expect(
+      initiateOutboundCall({
+        customerPhone: '+919876543210',
+      })
+    ).rejects.toThrow(/FastAPI backend unreachable/);
   });
 
   it('fetchCallStatus retrieves updated status by call ID', async () => {
@@ -94,6 +121,7 @@ describe('telephonyApi client service', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'application/json' },
       json: async () => ({ data: mockCallDto }),
     } as any);
 
@@ -110,6 +138,7 @@ describe('telephonyApi client service', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'application/json' },
       json: async () => ({ data: mockCallDto }),
     } as any);
 
@@ -127,6 +156,7 @@ describe('telephonyApi client service', () => {
   it('listRecentCalls retrieves call history list', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'application/json' },
       json: async () => ({ data: [{ id: 'c1' }, { id: 'c2' }] }),
     } as any);
 
@@ -143,6 +173,7 @@ describe('telephonyApi client service', () => {
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
+      headers: { get: () => 'application/json' },
       json: async () => ({ data: mockCallDto }),
     } as any);
 

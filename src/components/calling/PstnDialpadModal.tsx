@@ -6,9 +6,8 @@ import {
   X,
   Delete,
   ShieldCheck,
-  Radio,
-  Sparkles,
-  Info,
+  User,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function PstnDialpadModal() {
@@ -16,10 +15,13 @@ export default function PstnDialpadModal() {
     dialpadModalOpen,
     setDialpadModalOpen,
     startCall,
-    showToast,
+    telephonyError,
   } = useApp();
 
   const [phoneNumber, setPhoneNumber] = useState('+91');
+  const [agentPhone, setAgentPhone] = useState(() => {
+    return (typeof window !== 'undefined' ? localStorage.getItem('onground_agent_phone') : '') || '';
+  });
   const [customerName, setCustomerName] = useState('Customer');
   const [notes, setNotes] = useState('Direct PSTN outbound call');
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -36,20 +38,25 @@ export default function PstnDialpadModal() {
     setPhoneNumber((prev) => (prev.length > 3 ? prev.slice(0, -1) : '+91'));
   };
 
-  const handleClear = () => {
-    setValidationError(null);
-    setPhoneNumber('+91');
-  };
-
   const handleDial = (e: React.FormEvent) => {
     e.preventDefault();
-    const clean = phoneNumber.replace(/[\s\-\(\)]/g, '');
+    const cleanCustomer = phoneNumber.replace(/[\s\-\(\)]/g, '');
+    const cleanAgent = agentPhone.trim().replace(/[\s\-\(\)]/g, '');
 
     // E.164 validation check: must start with + and have 8 to 15 digits
     const e164Regex = /^\+[1-9]\d{7,14}$/;
-    if (!e164Regex.test(clean)) {
-      setValidationError('Please enter a valid E.164 telephone number (e.g. +919876543210)');
+    if (!e164Regex.test(cleanCustomer)) {
+      setValidationError('Please enter a valid E.164 customer phone number (e.g. +919876543210)');
       return;
+    }
+
+    if (cleanAgent && !e164Regex.test(cleanAgent)) {
+      setValidationError('Agent phone number must be in E.164 format (e.g. +919876543210)');
+      return;
+    }
+
+    if (cleanAgent && typeof window !== 'undefined') {
+      localStorage.setItem('onground_agent_phone', cleanAgent);
     }
 
     setDialpadModalOpen(false);
@@ -59,7 +66,8 @@ export default function PstnDialpadModal() {
       id: `manual-${Date.now()}`,
       name: customerName.trim() || 'PSTN Recipient',
       initials: (customerName.trim() || 'CU').slice(0, 2).toUpperCase(),
-      phone: clean,
+      phone: cleanCustomer,
+      agentPhone: cleanAgent || undefined,
       avatarBg: '#e1f5ee',
       avatarColor: '#0f6e56',
       intent: notes.trim() || 'Direct Real PSTN Outbound Call',
@@ -96,11 +104,11 @@ export default function PstnDialpadModal() {
               <h3 className="text-base font-bold text-white flex items-center gap-2">
                 <span>PSTN Outbound Dial</span>
                 <span className="text-[10px] bg-sky-500/20 text-sky-300 border border-sky-400/30 px-2 py-0.5 rounded-full font-bold">
-                  PSTN Gateway
+                  Two-Leg Gateway
                 </span>
               </h3>
               <p className="text-xs text-gray-300 mt-0.5">
-                Initiate outbound call via configured telephony provider
+                Initiate authentic carrier call to your handset and customer
               </p>
             </div>
           </div>
@@ -114,19 +122,54 @@ export default function PstnDialpadModal() {
 
         {/* Content Form */}
         <form onSubmit={handleDial} className="p-5 space-y-4">
+          {/* Telephony Error Alert */}
+          {telephonyError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2.5">
+              <AlertTriangle size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-red-800">
+                <span className="font-bold">Last Dispatch Note: </span>
+                {telephonyError}
+              </div>
+            </div>
+          )}
+
           {/* Telephony Gateway Notice */}
           <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 flex items-start gap-2.5">
             <ShieldCheck size={16} className="text-sky-700 mt-0.5 flex-shrink-0" />
             <div className="text-xs text-sky-800">
-              <span className="font-bold">Telephony Gateway: </span>
-              Calls are routed through the configured backend provider (Twilio / Plivo / Mock).
+              <span className="font-bold">Two-Leg Bridge: </span>
+              The carrier calls your Agent handset first, then rings the Customer handset and bridges both into a live conference.
             </div>
+          </div>
+
+          {/* Agent Phone (Your Handset) */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                <User size={13} className="text-og-green" />
+                <span>Your Agent Mobile Phone (E.164)</span>
+              </label>
+              <span className="text-[10px] text-gray-400 font-medium">Overrides DEV_AGENT_PHONE</span>
+            </div>
+            <input
+              type="tel"
+              value={agentPhone}
+              onChange={(e) => {
+                setValidationError(null);
+                setAgentPhone(e.target.value);
+              }}
+              placeholder="+9198XXXXXXXX (Your Phone)"
+              className="w-full text-sm font-semibold px-3.5 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 focus:outline-none focus:ring-2 focus:ring-og-green font-mono"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Your physical phone will ring first. Leave blank only if DEV_AGENT_PHONE is set in .env.
+            </p>
           </div>
 
           {/* Number Display & Input */}
           <div>
             <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-              Destination Phone Number (E.164)
+              Customer Destination Phone Number (E.164)
             </label>
             <div className="relative flex items-center">
               <input
@@ -197,7 +240,7 @@ export default function PstnDialpadModal() {
           <div className="grid grid-cols-2 gap-3 pt-1">
             <div>
               <label className="block text-[11px] font-bold text-gray-600 uppercase mb-1">
-                Recipient Name
+                Customer Name
               </label>
               <input
                 type="text"

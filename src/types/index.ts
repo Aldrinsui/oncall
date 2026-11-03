@@ -40,6 +40,7 @@ export interface BuyingSignal {
 // ─── Calls ──────────────────────────────────────────────────────
 export type CallDirection = 'inbound' | 'outbound' | 'missed';
 export type CallStatus = 'idle' | 'ringing' | 'active' | 'wrapup' | 'review';
+export type CallMode = 'ROLEPLAY' | 'PSTN' | null;
 
 export interface CallTarget {
   id: string;
@@ -53,6 +54,7 @@ export interface CallTarget {
   value?: string;
   personaChallenge?: string;
   scriptContext?: string;
+  agentPhone?: string;
 }
 
 export interface QueuedCaller {

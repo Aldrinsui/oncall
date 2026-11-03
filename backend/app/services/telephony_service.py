@@ -128,7 +128,14 @@ class TelephonyService:
                 raise ValueError("Agent endpoint URI or phone number is required in production environment.")
             agent_endpoint = agent_endpoint_uri
         else:
-            agent_endpoint = agent_endpoint_uri or settings.DEV_AGENT_PHONE or "+919000000001"
+            agent_endpoint = agent_endpoint_uri or settings.DEV_AGENT_PHONE
+            if prov_name in ("twilio", "plivo") and not is_simulated:
+                if not agent_endpoint or agent_endpoint.strip() in ("+919000000001", "+910000000000"):
+                    raise ValueError(
+                        "DEV_AGENT_PHONE is not configured with your actual mobile number. "
+                        "Please set DEV_AGENT_PHONE=+91YOUR_NUMBER in .env or provide your agent phone number in the dialpad."
+                    )
+            agent_endpoint = agent_endpoint or "+919000000001"
         if agent_endpoint.startswith("+"):
             validate_e164(agent_endpoint, "agent_endpoint_uri")
             agent_ep_type = "PSTN"
@@ -649,6 +656,13 @@ class TelephonyService:
         }
         if agent_leg.status in terminal_statuses or customer_leg.status in terminal_statuses:
             raise ValueError("Cannot bridge legs that are already terminated")
+
+        # For real carrier calls, both handsets must have answered before bridging
+        if not call.is_simulated and settings.TELEPHONY_PROVIDER in ("twilio", "plivo"):
+            if agent_leg.status != CallLegStatus.ANSWERED or customer_leg.status != CallLegStatus.ANSWERED:
+                raise ValueError(
+                    f"Cannot bridge legs until both have answered. Current: Agent={agent_leg.status.value}, Customer={customer_leg.status.value}"
+                )
 
         now = datetime.now(timezone.utc)
         await self.provider.bridge_legs(

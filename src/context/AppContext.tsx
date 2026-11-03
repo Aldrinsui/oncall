@@ -434,9 +434,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (cleanPhone && cleanPhone.startsWith('+')) {
       try {
         const isUuid = target.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.id);
+        const storedAgentPhone = typeof window !== 'undefined' ? localStorage.getItem('onground_agent_phone') : null;
+        const agentPhone = target.agentPhone || storedAgentPhone || undefined;
+
         const callDto = await initiateOutboundCall({
           customerPhone: cleanPhone,
           customerName: target.name,
+          agentPhone: agentPhone,
+          agentEndpointUri: agentPhone,
           notes: target.intent || 'Real outbound PSTN call from OnGround portal',
           leadId: isUuid ? target.id : undefined,
         });

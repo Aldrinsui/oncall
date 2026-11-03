@@ -461,6 +461,17 @@ export default function ActiveCallView() {
 
   const handleAnswerCall = async () => {
     if (backendCallId) {
+      const agentLeg = backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT');
+      const custLeg = backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER');
+      const bothAnswered = agentLeg?.status === 'ANSWERED' && custLeg?.status === 'ANSWERED';
+
+      if (!bothAnswered) {
+        showToast(
+          'Both physical phones must be answered first. Pick up your handset when it rings; the conference connects automatically.'
+        );
+        return;
+      }
+
       try {
         await bridgeActiveCall();
       } catch (err) {
@@ -678,13 +689,34 @@ export default function ActiveCallView() {
               <PhoneOff size={16} />
               <span>Decline / Cancel</span>
             </button>
-            <button
-              onClick={handleAnswerCall}
-              className="px-6 py-2.5 bg-og-green hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all"
-            >
-              <Phone size={16} />
-              <span>{backendCallId ? 'Connect & Bridge Lines' : 'Answer / Connect'}</span>
-            </button>
+            {backendCallId ? (
+              <button
+                onClick={handleAnswerCall}
+                className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
+                  backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status === 'ANSWERED' &&
+                  backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status === 'ANSWERED'
+                    ? 'bg-og-green hover:bg-emerald-600 text-white cursor-pointer'
+                    : 'bg-white/20 text-white/90 border border-white/30 cursor-pointer hover:bg-white/30'
+                }`}
+                title="PSTN call automatically transitions to Connected when both physical phones are answered"
+              >
+                <Phone size={16} />
+                <span>
+                  {backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status === 'ANSWERED' &&
+                  backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status === 'ANSWERED'
+                    ? 'Bridge Confirmed Legs'
+                    : 'Awaiting Handset Pickups...'}
+                </span>
+              </button>
+            ) : (
+              <button
+                onClick={handleAnswerCall}
+                className="px-6 py-2.5 bg-og-green hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all"
+              >
+                <Phone size={16} />
+                <span>Answer / Connect</span>
+              </button>
+            )}
           </div>
         </div>
       )}
