@@ -52,12 +52,48 @@ export interface InitiateCallParams {
 
 export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && (window as any).__ONCALL_API_URL__) {
-    return (window as any).__ONCALL_API_URL__;
+    return String((window as any).__ONCALL_API_URL__).trim().replace(/\/+$/, '');
+  }
+  const storage = typeof window !== 'undefined' ? window.localStorage : (globalThis as any).localStorage;
+  if (storage) {
+    const runtimeUrl = storage.getItem('onground_backend_url');
+    if (runtimeUrl && runtimeUrl.trim()) {
+      return runtimeUrl.trim().replace(/\/+$/, '');
+    }
   }
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_API_URL) {
-    return import.meta.env.VITE_BACKEND_API_URL;
+    return String(import.meta.env.VITE_BACKEND_API_URL).trim().replace(/\/+$/, '');
   }
   return '';
+};
+
+/**
+ * Checks whether an external backend URL or local dev environment is available.
+ * Returns false on production static hosts (like Vercel) if VITE_BACKEND_API_URL is omitted.
+ */
+export const isConfiguredBackendAvailable = (isProdOverride?: boolean): boolean => {
+  const baseUrl = getApiBaseUrl();
+  if (baseUrl) return true;
+
+  if (isProdOverride !== undefined) {
+    return !isProdOverride;
+  }
+
+  // In production Vite build (PROD === true)
+  if (typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD)) {
+    return false;
+  }
+
+  // In browser, if hostname is not localhost / loopback (e.g. deployed on Vercel domain)
+  if (typeof window !== 'undefined' && window.location?.hostname) {
+    const host = window.location.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]') {
+      return false;
+    }
+  }
+
+  // Local development with Vite proxy to localhost:8000 or Node test environment
+  return true;
 };
 
 const DEV_AGENT_ID = '00000000-0000-0000-0000-000000000001';
@@ -68,7 +104,8 @@ const getHeaders = (): HeadersInit => {
   };
 
   const authToken = typeof window !== 'undefined'
-    ? localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token')
+    ? (typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null) ||
+      (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('auth_token') : null)
     : null;
 
   if (authToken) {
@@ -88,15 +125,44 @@ async function requestJson<T>(endpoint: string, options: RequestInit = {}): Prom
   const baseUrl = getApiBaseUrl();
   const url = `${baseUrl}${endpoint}`;
 
+  if (!isConfiguredBackendAvailable()) {
+    throw new Error(
+      `FastAPI backend URL not configured (VITE_BACKEND_API_URL is missing). ` +
+      `The production frontend at ${typeof window !== 'undefined' ? window.location.origin : 'host'} requires an external deployed FastAPI server for PSTN carrier calling. ` +
+      `Please configure VITE_BACKEND_API_URL in your Vercel Project Settings.`
+    );
+  }
+
   let res: Response;
   try {
     res = await fetch(url, options);
   } catch (netErr: any) {
+    const target = baseUrl || 'http://localhost:8000';
     throw new Error(
-      `FastAPI backend unreachable at ${url || 'http://localhost:8000'}. ` +
+      `FastAPI backend unreachable at ${target}. ` +
       `Please ensure your backend server is running: 'uvicorn backend.app.main:app --reload --port 8000' ` +
       `(${netErr?.message || 'Connection refused'})`
     );
+  }
+
+  // Handle static hosting 405 Method Not Allowed (e.g. Vercel routing POST to index.html)
+  if (res.status === 405) {
+    throw new Error(
+      `Production backend error: HTTP 405 Method Not Allowed from ${url}. ` +
+      `The static frontend received a POST request because no external FastAPI backend URL is configured. ` +
+      `Please configure VITE_BACKEND_API_URL in your Vercel Project Settings to point to your live FastAPI backend.`
+    );
+  }
+
+  // Handle static hosting 404 Not Found on API routes
+  if (res.status === 404) {
+    const ct = res.headers?.get ? (res.headers.get('content-type') || '') : '';
+    if (!ct.includes('application/json')) {
+      throw new Error(
+        `FastAPI backend endpoint not found (HTTP 404 from ${url}). ` +
+        `No backend service answered at this URL. Ensure VITE_BACKEND_API_URL points to the correct FastAPI host.`
+      );
+    }
   }
 
   const contentType = res.headers?.get ? (res.headers.get('content-type') || '') : 'application/json';
@@ -104,12 +170,12 @@ async function requestJson<T>(endpoint: string, options: RequestInit = {}): Prom
     const rawText = await res.text();
     if (rawText.includes('<!DOCTYPE') || rawText.includes('<html') || rawText.includes('<head')) {
       throw new Error(
-        `Backend returned HTML instead of JSON from ${endpoint}. ` +
+        `Backend returned HTML instead of JSON from ${endpoint} (HTTP ${res.status}). ` +
         `This occurs when running on Vercel without a configured VITE_BACKEND_API_URL, or when the local dev proxy ` +
-        `cannot reach port 8000. Start FastAPI via 'uvicorn backend.app.main:app --reload --port 8000'.`
+        `cannot reach port 8000. Configure VITE_BACKEND_API_URL or start FastAPI via 'uvicorn backend.app.main:app --reload --port 8000'.`
       );
     }
-    throw new Error(`Unexpected non-JSON response from backend (status ${res.status}): ${rawText.slice(0, 150)}`);
+    throw new Error(`Unexpected non-JSON response from backend (HTTP ${res.status}): ${rawText.slice(0, 150)}`);
   }
 
   let json: any;
@@ -120,8 +186,21 @@ async function requestJson<T>(endpoint: string, options: RequestInit = {}): Prom
   }
 
   if (!res.ok) {
-    const errMessage = json?.detail || json?.message || `HTTP ${res.status} Error from telephony service`;
-    throw new Error(typeof errMessage === 'string' ? errMessage : JSON.stringify(errMessage));
+    let errMessage: string;
+    if (json?.detail) {
+      if (typeof json.detail === 'string') {
+        errMessage = json.detail;
+      } else if (Array.isArray(json.detail)) {
+        errMessage = json.detail.map((d: any) => `${d.loc?.slice(-1)[0] || 'field'}: ${d.msg}`).join(', ');
+      } else {
+        errMessage = JSON.stringify(json.detail);
+      }
+    } else if (json?.message) {
+      errMessage = typeof json.message === 'string' ? json.message : JSON.stringify(json.message);
+    } else {
+      errMessage = `HTTP ${res.status} Error from telephony service`;
+    }
+    throw new Error(errMessage);
   }
 
   return json;
