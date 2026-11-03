@@ -184,6 +184,68 @@ export interface PinnedActionItem {
   question: string;
   options: string[];
   meta?: string;
+  urgency?: string;
+  isAnswered?: boolean;
+  selectedOption?: string | null;
+  customReply?: string | null;
+}
+
+export interface CustomAgent {
+  id: string;
+  channelSlug: string;
+  name: string;
+  agentType: 'role' | 'task';
+  icon: string;
+  color: string;
+  scope: string;
+  metricName: string;
+  targetValue: number;
+  currentValue: number;
+  changeValue: number;
+  itemsLabel: string;
+  sourceAttribution: string;
+  status: string;
+  didWell?: string;
+  improve?: string;
+  focus?: string;
+  win?: string;
+  goodAt?: string[];
+  workOn?: string[];
+}
+
+export interface AgentChannelTask {
+  id: string;
+  title: string;
+  description?: string;
+  timeWindow?: string;
+  category?: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'BLOCKED' | 'COMPLETED' | 'CANCELLED';
+  isAcknowledged: boolean;
+  acknowledgedAt?: string;
+  explanation?: string;
+  managerName?: string;
+}
+
+export interface AgentChannelContext {
+  channelSlug: string;
+  channelName: string;
+  managerContext: string;
+  digestTime: string;
+  metricName: string;
+  targetValue: number;
+  currentValue: number;
+  changeValue: number;
+  didWell: string;
+  improve: string;
+  itemsLabel: string;
+  unacknowledgedTaskCount: number;
+  tasks: AgentChannelTask[];
+  softTasks: {
+    good_at: string[];
+    work_on: string[];
+    focus: string;
+    win: string;
+  };
 }
 
 export interface PulseThread {
