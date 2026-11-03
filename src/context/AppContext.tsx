@@ -464,7 +464,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (!cleanPhone || !cleanPhone.startsWith('+')) {
+    if (!cleanPhone || !cleanPhone.startsWith('+') || !/^\+[1-9]\d{6,14}$/.test(cleanPhone)) {
       clearCallPolling();
       setCallState('idle');
       setCallMode(null);

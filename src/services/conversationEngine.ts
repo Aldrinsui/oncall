@@ -28,6 +28,7 @@ export interface CustomerPersona {
   productInterest: string;
   painPoint: string;
   inboundOpening?: string;
+  roleplayOpening?: string;
   outboundGreetingResponse: string;
   discoveryResponse: string;
   pitchReaction: string; // The question customer asks after product pitch (e.g. warranty/guarantee)
@@ -44,6 +45,7 @@ export const CUSTOMER_PERSONAS: Record<string, CustomerPersona> = {
     callDirection: 'outbound',
     productInterest: 'Ortho GRID Mattress (Queen)',
     painPoint: 'Severe lower back soreness from long sitting hours and waking up sweaty',
+    roleplayOpening: 'Hello? Suresh here.',
     outboundGreetingResponse:
       'Hello Arvind! Thanks for following up. Yes, I was looking into upgrading my mattress on your website.',
     discoveryResponse:
@@ -62,6 +64,7 @@ export const CUSTOMER_PERSONAS: Record<string, CustomerPersona> = {
     callDirection: 'outbound',
     productInterest: 'Ortho GRID Mattress (Queen)',
     painPoint: 'Lumbar spine discomfort and doubts about grid durability',
+    roleplayOpening: 'Hello? Mukunda speaking. Who is this?',
     outboundGreetingResponse:
       'Hello Arvind! Thanks for following up. Yes, I checked out your Ortho GRID mattress online yesterday.',
     discoveryResponse:
@@ -82,6 +85,7 @@ export const CUSTOMER_PERSONAS: Record<string, CustomerPersona> = {
     painPoint: 'Disputed ₹1,200 handling fee on recent EMI invoice',
     inboundOpening:
       "Hello, is this The Sleep Company? I've called twice about an unexpected ₹1,200 charge on my EMI statement.",
+    roleplayOpening: 'Hello? Priya speaking.',
     outboundGreetingResponse:
       "Hello, yes! I'm glad you called back. I've been trying to get an answer about an extra ₹1,200 charge on my invoice.",
     discoveryResponse:
@@ -100,6 +104,7 @@ export const CUSTOMER_PERSONAS: Record<string, CustomerPersona> = {
     callDirection: 'outbound',
     productInterest: 'SmartGRID Luxe (King)',
     painPoint: 'Disturbed sleep from partner movement and heat trapped by memory foam',
+    roleplayOpening: 'Hello, Rohan here.',
     outboundGreetingResponse:
       'Hi Arvind! Yes, I was browsing your SmartGRID Luxe King mattress for our new master bedroom.',
     discoveryResponse:
@@ -118,6 +123,7 @@ export const CUSTOMER_PERSONAS: Record<string, CustomerPersona> = {
     callDirection: 'outbound',
     productInterest: 'SmartGRID Orthopedic Mattress',
     painPoint: 'Looking for ergonomic spine support and cooler sleep',
+    roleplayOpening: 'Hello?',
     outboundGreetingResponse:
       'Hello Arvind! Thanks for calling. I was indeed inquiring about your ergonomic mattresses.',
     discoveryResponse:
@@ -144,6 +150,7 @@ export class ConversationStateMachine {
   private turns: ConversationTurn[] = [];
   private sentimentScore: number = 78;
   private isOutbound: boolean = true;
+  private isRoleplay: boolean = false;
 
   // Turn Tracking & Pending Question Grounding
   private pendingQuestion: 'none' | 'warranty_trial' | 'financing' | 'closing' = 'none';
@@ -161,6 +168,10 @@ export class ConversationStateMachine {
       !targetMeta?.intent?.toLowerCase().includes('missed') &&
       !targetMeta?.intent?.toLowerCase().includes('dispute') &&
       !targetMeta?.intent?.toLowerCase().includes('inbound');
+
+    const intent = (targetMeta?.intent || '').toLowerCase();
+    const name = (targetMeta?.name || '').toLowerCase();
+    this.isRoleplay = intent.includes('practise') || intent.includes('roleplay') || name.includes('roleplay');
 
     this.state = 'connected';
     this.currentStage = 'greeting';
@@ -211,8 +222,15 @@ export class ConversationStateMachine {
     };
   }
 
-  // Initial call opening line: Outbound has NO customer speech leak!
+  // Initial call opening line: Outbound has NO customer speech leak, roleplay simulates prompt pickup
   getOpeningLine(): { hasSpeech: boolean; text: string } {
+    if (this.isRoleplay && (this.persona.roleplayOpening || this.persona.inboundOpening)) {
+      this.state = 'agent_listening';
+      return {
+        hasSpeech: true,
+        text: this.persona.roleplayOpening || this.persona.inboundOpening || `Hello? ${this.persona.name} speaking.`,
+      };
+    }
     if (!this.isOutbound && this.persona.inboundOpening) {
       // Inbound: Customer speaks their inquiry
       this.state = 'agent_listening';
