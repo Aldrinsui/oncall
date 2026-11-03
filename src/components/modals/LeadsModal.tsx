@@ -31,32 +31,44 @@ export default function LeadsModal() {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
 
-  const currentLead = LEADS[leadsModalPage] || LEADS[0];
   const totalLeads = LEADS.length;
+  const safePage = Math.max(0, Math.min(totalLeads - 1, Math.floor(Number(leadsModalPage) || 0)));
+  const currentLead = LEADS[safePage] || LEADS[0];
 
+  const pageRef = useRef(safePage);
+  pageRef.current = safePage;
+
+  // 1. Focus management: capture previous focus on modal open, restore on close
   useEffect(() => {
     if (leadsModalOpen) {
-      previouslyFocusedElement.current = document.activeElement as HTMLElement;
-      setTimeout(() => closeButtonRef.current?.focus(), 50);
-
-      const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          setLeadsModalOpen(false);
-        } else if (e.key === 'ArrowRight' && leadsModalPage < totalLeads - 1) {
-          setLeadsModalPage(leadsModalPage + 1);
-        } else if (e.key === 'ArrowLeft' && leadsModalPage > 0) {
-          setLeadsModalPage(leadsModalPage - 1);
-        }
-      };
-      window.addEventListener('keydown', handleKeyDown);
+      previouslyFocusedElement.current = (typeof document !== 'undefined' ? document.activeElement : null) as HTMLElement | null;
+      const timer = setTimeout(() => closeButtonRef.current?.focus(), 50);
       return () => {
-        window.removeEventListener('keydown', handleKeyDown);
+        clearTimeout(timer);
         previouslyFocusedElement.current?.focus();
       };
     }
-  }, [leadsModalOpen, leadsModalPage, totalLeads, setLeadsModalOpen, setLeadsModalPage]);
+  }, [leadsModalOpen]);
 
-  if (!leadsModalOpen) return null;
+  // 2. Keyboard shortcuts: Escape (close), ArrowLeft/ArrowRight (paginate leads)
+  useEffect(() => {
+    if (!leadsModalOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLeadsModalOpen(false);
+      } else if (e.key === 'ArrowRight' && pageRef.current < totalLeads - 1) {
+        setLeadsModalPage(pageRef.current + 1);
+      } else if (e.key === 'ArrowLeft' && pageRef.current > 0) {
+        setLeadsModalPage(pageRef.current - 1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [leadsModalOpen, totalLeads, setLeadsModalOpen, setLeadsModalPage]);
+
+  if (!leadsModalOpen || !currentLead) return null;
 
   const handleStartCall = () => {
     setLeadsModalOpen(false);
@@ -97,23 +109,23 @@ export default function LeadsModal() {
                 Lead Dossier
               </span>
               <span className="text-[11px] bg-white/10 px-2 py-0.5 rounded-full font-semibold">
-                Lead {leadsModalPage + 1} of {totalLeads}
+                Lead {safePage + 1} of {totalLeads}
               </span>
             </div>
 
             <div className="flex items-center gap-1.5">
               {/* Pagination controls */}
               <button
-                onClick={() => setLeadsModalPage(Math.max(0, leadsModalPage - 1))}
-                disabled={leadsModalPage === 0}
+                onClick={() => setLeadsModalPage(Math.max(0, safePage - 1))}
+                disabled={safePage <= 0}
                 className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-white"
                 aria-label="Previous lead"
               >
                 <ChevronLeft size={16} />
               </button>
               <button
-                onClick={() => setLeadsModalPage(Math.min(totalLeads - 1, leadsModalPage + 1))}
-                disabled={leadsModalPage === totalLeads - 1}
+                onClick={() => setLeadsModalPage(Math.min(totalLeads - 1, safePage + 1))}
+                disabled={safePage >= totalLeads - 1}
                 className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-white"
                 aria-label="Next lead"
               >

@@ -18,6 +18,7 @@ export default function Planner() {
   const {
     planTab,
     setPlanTab,
+    startRoleplay,
     startCall,
     showToast,
     setDialpadModalOpen,
@@ -25,7 +26,7 @@ export default function Planner() {
 
   const handleStartPractise = (leadId: string, leadName: string) => {
     const lead = LEADS.find((l) => l.id === leadId) || LEADS[0];
-    startCall({
+    startRoleplay({
       id: lead.id,
       name: `${lead.name} (AI Customer Roleplay)`,
       initials: lead.initials,

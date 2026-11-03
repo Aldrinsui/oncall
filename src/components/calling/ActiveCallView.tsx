@@ -34,6 +34,8 @@ export default function ActiveCallView() {
   const {
     callState,
     setCallState,
+    callMode,
+    setCallMode,
     activeCallTarget,
     showToast,
     addRecentCall,
@@ -460,6 +462,14 @@ export default function ActiveCallView() {
   };
 
   const handleAnswerCall = async () => {
+    // 1. In AI Roleplay mode (or offline/local mode): Stop ringing audio, transition to active, start roleplay
+    if (callMode === 'ROLEPLAY' || (!backendCallId && callMode !== 'PSTN')) {
+      audioService.stopRinging();
+      setCallState('active');
+      return;
+    }
+
+    // 2. In Real PSTN mode: Connect via carrier conference bridge
     if (backendCallId) {
       const agentLeg = backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT');
       const custLeg = backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER');
@@ -479,8 +489,6 @@ export default function ActiveCallView() {
       }
       return;
     }
-    audioService.stopRinging();
-    setCallState('active');
   };
 
   const handleHangup = () => {
@@ -569,11 +577,13 @@ export default function ActiveCallView() {
     setCompletedCallReview(callReview);
     setReviewOpen(true);
     setCallState('idle');
+    setCallMode(null);
   };
 
   const handleCloseWrapup = () => {
     setWrapupOpen(false);
     setCallState('idle');
+    setCallMode(null);
     audioService.stopRinging();
     speechService.stopMicrophone();
     speechService.stopSpeaking();
@@ -659,11 +669,16 @@ export default function ActiveCallView() {
                 <span className="text-[11px] font-bold uppercase tracking-wider text-orange-200">
                   Calling Customer • Ringing...
                 </span>
-                {backendCallId && (
+                {callMode === 'ROLEPLAY' ? (
+                  <span className="text-[10px] bg-purple-500/30 border border-purple-400/50 text-purple-200 px-2.5 py-0.5 rounded-full font-mono font-bold flex items-center gap-1 shadow-xs">
+                    <Sparkles size={11} className="text-purple-300" />
+                    AI ROLEPLAY / SIMULATED
+                  </span>
+                ) : callMode === 'PSTN' && backendCallId ? (
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-[10px] bg-white/20 border border-white/30 text-white px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                      {backendCallDetails?.is_simulated ? 'SIMULATED' : 'CARRIER'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'RINGING'}
+                      REAL PSTN / CARRIER ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'RINGING'}
                     </span>
                     <span className={`text-[10px] border px-2 py-0.5 rounded-full font-mono font-semibold ${backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status === 'ANSWERED' ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40' : 'bg-white/10 text-white/80 border-white/20'}`}>
                       Agent: {backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status || 'RINGING'}
@@ -672,7 +687,7 @@ export default function ActiveCallView() {
                       Customer: {backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status || 'RINGING'}
                     </span>
                   </div>
-                )}
+                ) : null}
               </div>
               <h3 className="text-xl font-bold">{activeCallTarget?.name || 'Mukunda R.'}</h3>
               <p className="text-xs text-orange-100 mt-0.5">
@@ -689,7 +704,7 @@ export default function ActiveCallView() {
               <PhoneOff size={16} />
               <span>Decline / Cancel</span>
             </button>
-            {backendCallId ? (
+            {callMode === 'PSTN' && backendCallId ? (
               <button
                 onClick={handleAnswerCall}
                 className={`px-5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-lg transition-all ${
@@ -743,11 +758,16 @@ export default function ActiveCallView() {
                   <span className="text-[11px] bg-white/15 px-2.5 py-0.5 rounded-full font-bold">
                     {activeCallTarget?.phone || '+91 98450 12345'}
                   </span>
-                  {backendCallId && (
+                  {callMode === 'ROLEPLAY' ? (
+                    <span className="text-[10px] bg-purple-500/30 border border-purple-400/50 text-purple-200 px-2.5 py-0.5 rounded-full font-mono font-bold flex items-center gap-1 shadow-xs">
+                      <Sparkles size={11} className="text-purple-300" />
+                      AI ROLEPLAY / SIMULATED
+                    </span>
+                  ) : callMode === 'PSTN' && backendCallId ? (
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`text-[10px] ${backendCallDetails?.is_simulated ? 'bg-amber-500/30 text-amber-200 border-amber-400/40' : 'bg-emerald-500/30 text-emerald-200 border-emerald-400/40'} border px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${backendCallDetails?.is_simulated ? 'bg-amber-300' : 'bg-emerald-300'}`} />
-                        {backendCallDetails?.is_simulated ? 'SIMULATED MOCK' : 'CARRIER LIVE'} ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'CONNECTED'}
+                      <span className="text-[10px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/40 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
+                        REAL PSTN / CARRIER ({backendCallDetails?.legs?.[0]?.provider?.toUpperCase() || 'PSTN'}): {backendCallStatus || 'CONNECTED'}
                       </span>
                       <span className="text-[10px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full font-mono">
                         Agent: {backendCallDetails?.legs?.find((l) => l.leg_role === 'AGENT')?.status || 'ANSWERED'}
@@ -756,7 +776,7 @@ export default function ActiveCallView() {
                         Customer: {backendCallDetails?.legs?.find((l) => l.leg_role === 'CUSTOMER')?.status || 'ANSWERED'}
                       </span>
                     </div>
-                  )}
+                  ) : null}
                   {peerState === 'connected' && (
                     <span className="text-[10px] bg-teal-400 text-slate-900 px-2 py-0.5 rounded-full font-black flex items-center gap-1">
                       <Radio size={10} />

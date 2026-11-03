@@ -4,6 +4,7 @@ import type {
   PlanTab,
   PulseView,
   CallTarget,
+  CallMode,
   RecentCall,
   SellingPersona,
   RecordingConsentState,
@@ -66,6 +67,8 @@ interface AppContextType {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   // Call state
+  callMode: CallMode;
+  setCallMode: (m: CallMode) => void;
   callState: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review';
   setCallState: (s: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review') => void;
   callingLead: string | null;
@@ -78,8 +81,9 @@ interface AppContextType {
   telephonyError: string | null;
   dialpadModalOpen: boolean;
   setDialpadModalOpen: (open: boolean) => void;
-  startCall: (target: CallTarget) => void;
-  endCall: () => void;
+  startRoleplay: (target: CallTarget) => void;
+  startCall: (target: CallTarget) => Promise<void> | void;
+  endCall: () => Promise<void> | void;
   bridgeActiveCall: () => Promise<void>;
   recentCalls: RecentCall[];
   addRecentCall: (call: RecentCall) => void;
@@ -234,6 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [callMode, setCallMode] = useState<CallMode>(null);
   const [callState, setCallState] = useState<'idle' | 'ringing' | 'active' | 'wrapup' | 'review'>('idle');
   const [callingLead, setCallingLead] = useState<string | null>(null);
   const [activeCallTarget, setActiveCallTarget] = useState<CallTarget | null>(null);
@@ -406,8 +411,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const startRoleplay = (target: CallTarget) => {
+    // 1. Clear any existing polling
+    clearCallPolling();
+    // 2. Set call mode to ROLEPLAY
+    setCallMode('ROLEPLAY');
+    // 3. Set the active target
+    setActiveCallTarget(target);
+    setCallingLead(target.id);
+    // 4. Navigate to Plan
+    setActiveView('plan');
+    // 5. Preserve or select the Practice a Call tab
+    setPlanTab('practise');
+    // 6. Reset backendCallId, backendCallStatus and backendCallDetails
+    setBackendCallId(null);
+    setBackendCallStatus(null);
+    setBackendCallDetails(null);
+    // 7. Clear previous telephony errors
+    setTelephonyError(null);
+    // 8. Reset recording consent for the new session
+    resetConsent();
+    // 9. Set callState to ringing
+    setCallState('ringing');
+    // 10-12. Pure local simulation: zero backend or telephony provider calls
+    showToast(`AI Roleplay simulator ringing for ${target.name}...`);
+  };
+
   const startCall = async (target: CallTarget) => {
     clearCallPolling();
+    // Exclusively for real PSTN calling
+    setCallMode('PSTN');
     setActiveCallTarget(target);
     setCallingLead(target.id);
     setActiveView('plan');
@@ -431,63 +464,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    if (cleanPhone && cleanPhone.startsWith('+')) {
-      try {
-        const isUuid = target.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.id);
-        const storedAgentPhone = typeof window !== 'undefined' ? localStorage.getItem('onground_agent_phone') : null;
-        const agentPhone = target.agentPhone || storedAgentPhone || undefined;
+    if (!cleanPhone || !cleanPhone.startsWith('+')) {
+      clearCallPolling();
+      setCallState('idle');
+      setCallMode(null);
+      const msg = 'Invalid phone number format: Destination must be in E.164 format (e.g. +919876543210)';
+      setTelephonyError(msg);
+      showToast(`PSTN Calling Failed: ${msg}`);
+      return;
+    }
 
-        const callDto = await initiateOutboundCall({
-          customerPhone: cleanPhone,
-          customerName: target.name,
-          agentPhone: agentPhone,
-          agentEndpointUri: agentPhone,
-          notes: target.intent || 'Real outbound PSTN call from OnGround portal',
-          leadId: isUuid ? target.id : undefined,
-        });
+    try {
+      const isUuid = target.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target.id);
+      const storedAgentPhone = typeof window !== 'undefined' ? localStorage.getItem('onground_agent_phone') : null;
+      const agentPhone = target.agentPhone || storedAgentPhone || undefined;
 
-        setBackendCallId(callDto.id);
-        setBackendCallStatus(callDto.status);
-        setBackendCallDetails(callDto);
-        const leg = callDto.legs?.[0];
-        const providerName = leg?.provider?.toUpperCase() || 'PSTN';
-        showToast(`Real ${providerName} PSTN call ringing on ${cleanPhone} (Call ID: ${callDto.id.slice(0, 8)})`);
+      const callDto = await initiateOutboundCall({
+        customerPhone: cleanPhone,
+        customerName: target.name,
+        agentPhone: agentPhone,
+        agentEndpointUri: agentPhone,
+        notes: target.intent || 'Real outbound PSTN call from OnGround portal',
+        leadId: isUuid ? target.id : undefined,
+      });
 
-        // Start polling provider status every 1.5 seconds
-        pollTimerRef.current = setInterval(async () => {
-          try {
-            const updated = await fetchCallStatus(callDto.id);
-            setBackendCallStatus(updated.status);
-            setBackendCallDetails(updated);
+      setBackendCallId(callDto.id);
+      setBackendCallStatus(callDto.status);
+      setBackendCallDetails(callDto);
+      const leg = callDto.legs?.[0];
+      const providerName = leg?.provider?.toUpperCase() || 'PSTN';
+      showToast(`Real ${providerName} PSTN call ringing on ${cleanPhone} (Call ID: ${callDto.id.slice(0, 8)})`);
 
-            if (updated.status === 'CONNECTED') {
-              setCallState('active');
-            } else if (updated.status === 'WRAPUP' || updated.status === 'COMPLETED') {
-              clearCallPolling();
-              setCallState('wrapup');
-            } else if (
-              updated.status === 'BUSY' ||
-              updated.status === 'NO_ANSWER' ||
-              updated.status === 'FAILED' ||
-              updated.status === 'CANCELLED'
-            ) {
-              clearCallPolling();
-              showToast(`PSTN call ended: ${updated.status}`);
-              setCallState('wrapup');
-            }
-          } catch (pollErr) {
-            console.warn('Call status poll warning:', pollErr);
+      // Start polling provider status every 1.5 seconds
+      pollTimerRef.current = setInterval(async () => {
+        try {
+          const updated = await fetchCallStatus(callDto.id);
+          setBackendCallStatus(updated.status);
+          setBackendCallDetails(updated);
+
+          if (updated.status === 'CONNECTED') {
+            setCallState('active');
+          } else if (updated.status === 'WRAPUP' || updated.status === 'COMPLETED') {
+            clearCallPolling();
+            setCallState('wrapup');
+          } else if (
+            updated.status === 'BUSY' ||
+            updated.status === 'NO_ANSWER' ||
+            updated.status === 'FAILED' ||
+            updated.status === 'CANCELLED'
+          ) {
+            clearCallPolling();
+            showToast(`PSTN call ended: ${updated.status}`);
+            setCallState('wrapup');
           }
-        }, 1500);
+        } catch (pollErr) {
+          console.warn('Call status poll warning:', pollErr);
+        }
+      }, 1500);
 
-      } catch (err: any) {
-        clearCallPolling();
-        const msg = err?.message || 'Telephony provider connection failed';
-        console.warn('Real PSTN calling dispatch note:', msg);
-        setTelephonyError(msg);
-        setCallState('idle'); // Clear ringing state on initiation failure
-        showToast(`PSTN Calling Failed: ${msg}`);
-      }
+    } catch (err: any) {
+      clearCallPolling();
+      const msg = err?.message || 'Telephony provider connection failed';
+      console.warn('Real PSTN calling dispatch note:', msg);
+      setTelephonyError(msg);
+      setCallState('idle'); // Clear ringing state on initiation failure
+      setCallMode(null);
+      showToast(`PSTN Calling Failed: ${msg}`);
     }
   };
 
@@ -511,7 +553,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const endCall = async () => {
     clearCallPolling();
-    if (backendCallId) {
+    // Only issue provider termination if active in PSTN mode with real backendCallId
+    if (callMode === 'PSTN' && backendCallId) {
       try {
         await terminateCall(backendCallId);
       } catch (err) {
@@ -599,12 +642,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       currentAvatar, setCurrentAvatar, saveAvatar,
       ogScoreModalOpen, setOgScoreModalOpen,
       sidebarCollapsed, setSidebarCollapsed,
+      callMode, setCallMode,
       callState, setCallState,
       callingLead, setCallingLead,
       activeCallTarget, setActiveCallTarget,
       backendCallId, backendCallStatus, backendCallDetails, telephonyError,
       dialpadModalOpen, setDialpadModalOpen,
-      startCall, endCall, bridgeActiveCall,
+      startRoleplay, startCall, endCall, bridgeActiveCall,
       recentCalls, addRecentCall,
       shiftProgress, shiftPace, avgTalkTime, conversions, earnings, weeklyChartData,
       dailyTasks, toggleTask,
