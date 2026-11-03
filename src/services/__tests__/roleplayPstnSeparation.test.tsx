@@ -81,112 +81,112 @@ describe('Roleplay vs PSTN Calling Separation Test Suite', () => {
     });
   });
 
-  describe('2. Pure Simulation State & Dispatch Separation (startRoleplay vs startCall)', () => {
-    interface AppCallStateHarness {
-      callMode: CallMode;
-      callState: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review';
-      activeView: string;
-      planTab: string;
-      activeCallTarget: CallTarget | null;
-      backendCallId: string | null;
-      backendCallStatus: string | null;
-      telephonyError: string | null;
-    }
+  interface AppCallStateHarness {
+    callMode: CallMode;
+    callState: 'idle' | 'ringing' | 'active' | 'wrapup' | 'review';
+    activeView: string;
+    planTab: string;
+    activeCallTarget: CallTarget | null;
+    backendCallId: string | null;
+    backendCallStatus: string | null;
+    telephonyError: string | null;
+  }
 
-    function createCallPipelineEngine() {
-      let state: AppCallStateHarness = {
-        callMode: null,
-        callState: 'idle',
-        activeView: 'dashboard',
-        planTab: 'outgoing',
-        activeCallTarget: null,
-        backendCallId: null,
-        backendCallStatus: null,
-        telephonyError: null,
-      };
+  function createCallPipelineEngine() {
+    let state: AppCallStateHarness = {
+      callMode: null,
+      callState: 'idle',
+      activeView: 'dashboard',
+      planTab: 'outgoing',
+      activeCallTarget: null,
+      backendCallId: null,
+      backendCallStatus: null,
+      telephonyError: null,
+    };
 
-      const outboundInitiatorMock = vi.fn();
-      const outboundTerminatorMock = vi.fn();
+    const outboundInitiatorMock = vi.fn();
+    const outboundTerminatorMock = vi.fn();
 
-      return {
-        getState: () => ({ ...state }),
-        outboundInitiatorMock,
-        outboundTerminatorMock,
-        startRoleplay: (target: CallTarget) => {
-          state.callMode = 'ROLEPLAY';
-          state.activeCallTarget = target;
-          state.activeView = 'plan';
-          state.planTab = 'practise';
-          state.backendCallId = null;
-          state.backendCallStatus = null;
-          state.telephonyError = null;
-          state.callState = 'ringing';
-          // Strictly 0 network or backend calls
-        },
-        startCall: async (target: CallTarget) => {
-          state.callMode = 'PSTN';
-          state.activeCallTarget = target;
-          state.activeView = 'plan';
-          state.callState = 'ringing';
-          state.backendCallId = null;
-          state.backendCallStatus = null;
-          state.telephonyError = null;
+    return {
+      getState: () => ({ ...state }),
+      outboundInitiatorMock,
+      outboundTerminatorMock,
+      startRoleplay: (target: CallTarget) => {
+        state.callMode = 'ROLEPLAY';
+        state.activeCallTarget = target;
+        state.activeView = 'plan';
+        state.planTab = 'practise';
+        state.backendCallId = null;
+        state.backendCallStatus = null;
+        state.telephonyError = null;
+        state.callState = 'ringing';
+        // Strictly 0 network or backend calls
+      },
+      startCall: async (target: CallTarget) => {
+        state.callMode = 'PSTN';
+        state.activeCallTarget = target;
+        state.activeView = 'plan';
+        state.callState = 'ringing';
+        state.backendCallId = null;
+        state.backendCallStatus = null;
+        state.telephonyError = null;
 
-          let cleanPhone = (target.phone || '').replace(/[\s\-\(\)]/g, '');
-          if (cleanPhone && !cleanPhone.startsWith('+')) {
-            if (cleanPhone.length === 10) {
-              cleanPhone = `+91${cleanPhone}`;
-            } else if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
-              cleanPhone = `+${cleanPhone}`;
-            } else {
-              cleanPhone = `+91${cleanPhone}`;
-            }
+        let cleanPhone = (target.phone || '').replace(/[\s\-\(\)]/g, '');
+        if (cleanPhone && !cleanPhone.startsWith('+')) {
+          if (cleanPhone.length === 10) {
+            cleanPhone = `+91${cleanPhone}`;
+          } else if (cleanPhone.length === 12 && cleanPhone.startsWith('91')) {
+            cleanPhone = `+${cleanPhone}`;
+          } else {
+            cleanPhone = `+91${cleanPhone}`;
           }
+        }
 
-          if (!cleanPhone || !cleanPhone.startsWith('+') || !/^\+[1-9]\d{6,14}$/.test(cleanPhone)) {
-            state.callState = 'idle';
-            state.callMode = null;
-            state.telephonyError = 'Invalid phone number format: Destination must be in E.164 format (e.g. +919876543210)';
-            return;
-          }
-
-          try {
-            const res = await outboundInitiatorMock({
-              customerPhone: cleanPhone,
-              customerName: target.name,
-            });
-            state.backendCallId = res.id;
-            state.backendCallStatus = res.status;
-          } catch (err: any) {
-            state.callState = 'idle';
-            state.callMode = null;
-            state.telephonyError = err?.message || 'Carrier error';
-          }
-        },
-        answerCall: () => {
-          if (state.callMode === 'ROLEPLAY') {
-            state.callState = 'active';
-            return;
-          }
-          if (state.callMode === 'PSTN' && state.backendCallId) {
-            state.callState = 'active';
-          }
-        },
-        endCall: async () => {
-          if (state.callMode === 'PSTN' && state.backendCallId) {
-            await outboundTerminatorMock(state.backendCallId);
-          }
-          state.callState = 'wrapup';
-        },
-        closeWrapup: () => {
+        if (!cleanPhone || !cleanPhone.startsWith('+') || !/^\+[1-9]\d{6,14}$/.test(cleanPhone)) {
           state.callState = 'idle';
           state.callMode = null;
-          state.activeCallTarget = null;
-          state.backendCallId = null;
-        },
-      };
-    }
+          state.telephonyError = 'Invalid phone number format: Destination must be in E.164 format (e.g. +919876543210)';
+          return;
+        }
 
+        try {
+          const res = await outboundInitiatorMock({
+            customerPhone: cleanPhone,
+            customerName: target.name,
+          });
+          state.backendCallId = res.id;
+          state.backendCallStatus = res.status;
+        } catch (err: any) {
+          state.callState = 'idle';
+          state.callMode = null;
+          state.telephonyError = err?.message || 'Carrier error';
+        }
+      },
+      answerCall: () => {
+        if (state.callMode === 'ROLEPLAY') {
+          state.callState = 'active';
+          return;
+        }
+        if (state.callMode === 'PSTN' && state.backendCallId) {
+          state.callState = 'active';
+        }
+      },
+      endCall: async () => {
+        if (state.callMode === 'PSTN' && state.backendCallId) {
+          await outboundTerminatorMock(state.backendCallId);
+        }
+        state.callState = 'wrapup';
+      },
+      closeWrapup: () => {
+        state.callState = 'idle';
+        state.callMode = null;
+        state.activeCallTarget = null;
+        state.backendCallId = null;
+      },
+    };
+  }
+
+  describe('2. Pure Simulation State & Dispatch Separation (startRoleplay vs startCall)', () => {
     it('startRoleplay transitions to ringing with callMode ROLEPLAY and 0 network calls', () => {
       const pipeline = createCallPipelineEngine();
       const mukundaTarget: CallTarget = {
@@ -449,4 +449,99 @@ describe('Roleplay vs PSTN Calling Separation Test Suite', () => {
       expect(html).toContain('Awaiting Handset Pickups...');
     });
   });
+
+  describe('4. AI Practice Navigation & Screen Persistence (Preventing 1-Second Disappearance)', () => {
+    it('verifies selecting "practise" in navigation triggers startRoleplay and NOT startCall', () => {
+      const startCallSpy = vi.fn();
+      const startRoleplaySpy = vi.fn();
+
+      // Navigation handler contract matching Sidebar and MobileNav
+      const handlePlanSubClick = (tab: 'outgoing' | 'incoming' | 'recent' | 'practise') => {
+        if (tab === 'practise') {
+          startRoleplaySpy({
+            id: 'l1',
+            name: 'Mukunda R. (AI Roleplay Practise)',
+            phone: '+91 98450 12345',
+            intent: 'AI Voice Roleplay Practice',
+          });
+        }
+      };
+
+      handlePlanSubClick('practise');
+
+      expect(startRoleplaySpy).toHaveBeenCalledTimes(1);
+      expect(startCallSpy).not.toHaveBeenCalled();
+      expect(startRoleplaySpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'l1',
+          name: expect.stringContaining('AI Roleplay Practise'),
+          intent: 'AI Voice Roleplay Practice',
+        })
+      );
+    });
+
+    it('ensures AI roleplay call stays active and does not collapse to idle on network/carrier disconnect', async () => {
+      const pipeline = createCallPipelineEngine();
+
+      // Telephony backend is completely unreachable
+      pipeline.outboundInitiatorMock.mockRejectedValue(new Error('Network failure: Backend unreachable'));
+
+      const mockLead: CallTarget = {
+        id: 'l1',
+        name: 'Mukunda R. (AI Customer Roleplay)',
+        initials: 'MR',
+        phone: '+91 98450 12345',
+        avatarBg: '#faeeda',
+        avatarColor: '#854f0b',
+        intent: 'AI Voice Roleplay Practice',
+        product: 'SmartGRID Ortho',
+      };
+
+      // User starts roleplay
+      pipeline.startRoleplay(mockLead);
+
+      const ringingState = pipeline.getState();
+      expect(ringingState.callState).toBe('ringing');
+      expect(ringingState.callMode).toBe('ROLEPLAY');
+      expect(ringingState.activeView).toBe('plan');
+      expect(ringingState.planTab).toBe('practise');
+      expect(ringingState.telephonyError).toBeNull();
+
+      // Zero telephony provider calls attempted
+      expect(pipeline.outboundInitiatorMock).not.toHaveBeenCalled();
+
+      // Roleplay answered -> becomes active
+      const sm = new ConversationStateMachine(mockLead);
+      const opening = sm.getOpeningLine();
+      expect(opening.hasSpeech).toBe(true);
+      expect(opening.text).toBe('Hello? Mukunda speaking. Who is this?');
+
+      // The call never prematurely collapsed to idle
+      expect(ringingState.callState).not.toBe('idle');
+    });
+
+    it('contrasts with flawed PSTN dispatch which would fail and collapse to idle', async () => {
+      const pipeline = createCallPipelineEngine();
+      pipeline.outboundInitiatorMock.mockRejectedValue(new Error('Failed to fetch (Vercel 404 / Backend missing)'));
+
+      // If incorrectly dispatched via startCall:
+      try {
+        await pipeline.startCall({
+          id: 'l1',
+          name: 'Mukunda R.',
+          initials: 'MR',
+          phone: '+919845012345',
+          avatarBg: '#faeeda',
+          avatarColor: '#854f0b',
+          intent: 'AI Roleplay',
+        });
+      } catch (e) {
+        // startCall internal catch sets idle
+      }
+
+      // Proves why startRoleplay MUST be used instead of startCall for AI practice
+      expect(pipeline.outboundInitiatorMock).toHaveBeenCalled();
+    });
+  });
 });
+

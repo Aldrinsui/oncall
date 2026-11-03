@@ -40,6 +40,7 @@ export default function Sidebar() {
     sidebarCollapsed,
     setSidebarCollapsed,
     startCall,
+    startRoleplay,
   } = useApp();
   const [planOpen, setPlanOpen] = useState(activeView === 'plan');
 
@@ -60,7 +61,7 @@ export default function Sidebar() {
 
     if (tab === 'practise') {
       const lead = LEADS[0];
-      startCall({
+      startRoleplay({
         id: lead.id,
         name: `${lead.name} (AI Roleplay Practise)`,
         initials: lead.initials,

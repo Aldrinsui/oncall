@@ -36,6 +36,7 @@ export default function MobileNav() {
     planTab,
     setPlanTab,
     startCall,
+    startRoleplay,
   } = useApp();
   const [mobilePlanSheetOpen, setMobilePlanSheetOpen] = useState(false);
 
@@ -67,7 +68,7 @@ export default function MobileNav() {
 
     if (tab === 'practise') {
       const lead = LEADS[0];
-      startCall({
+      startRoleplay({
         id: lead.id,
         name: `${lead.name} (AI Customer Roleplay)`,
         initials: lead.initials,

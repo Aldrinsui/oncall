@@ -24,6 +24,7 @@ export default function LeadsModal() {
     leadsModalPage,
     setLeadsModalPage,
     startCall,
+    startRoleplay,
     showToast,
   } = useApp();
 
@@ -80,6 +81,22 @@ export default function LeadsModal() {
       avatarBg: currentLead.avatarBg,
       avatarColor: currentLead.avatarColor,
       intent: currentLead.interest,
+      product: currentLead.product,
+      value: `₹${currentLead.expectedValue.toLocaleString('en-IN')}`,
+      personaChallenge: currentLead.emiNote,
+    });
+  };
+
+  const handleStartPractise = () => {
+    setLeadsModalOpen(false);
+    startRoleplay({
+      id: currentLead.id,
+      name: `${currentLead.name} (AI Customer Roleplay)`,
+      initials: currentLead.initials,
+      phone: currentLead.phone,
+      avatarBg: currentLead.avatarBg,
+      avatarColor: currentLead.avatarColor,
+      intent: `Practise Scenario: ${currentLead.product}`,
       product: currentLead.product,
       value: `₹${currentLead.expectedValue.toLocaleString('en-IN')}`,
       personaChallenge: currentLead.emiNote,
@@ -293,13 +310,25 @@ export default function LeadsModal() {
               </button>
             </div>
 
-            <button
-              onClick={handleStartCall}
-              className="px-5 py-2.5 bg-og-green hover:bg-og-forest text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md hover:shadow-lg transition-all"
-            >
-              <PhoneCall size={15} />
-              <span>Call Lead Now</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleStartPractise}
+                className="px-3.5 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                title="Practise pitch with AI customer simulator"
+              >
+                <Sparkles size={14} className="text-purple-600" />
+                <span>Practise with AI</span>
+              </button>
+
+              <button
+                onClick={handleStartCall}
+                className="px-5 py-2.5 bg-og-green hover:bg-og-forest text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md hover:shadow-lg transition-all"
+              >
+                <PhoneCall size={15} />
+                <span>Call Lead Now</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

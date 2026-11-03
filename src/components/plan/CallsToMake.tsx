@@ -16,6 +16,7 @@ import type { Lead } from '../../types';
 export default function CallsToMake() {
   const {
     startCall,
+    startRoleplay,
     setLeadsModalOpen,
     setLeadsModalPage,
   } = useApp();
@@ -232,13 +233,39 @@ export default function CallsToMake() {
                       <span>Open Full Lead Dossier & Signals</span>
                     </button>
 
-                    <button
-                      onClick={(e) => handleStartCall(lead, e)}
-                      className="px-4 py-2 bg-og-forest hover:bg-og-forest-deep text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm"
-                    >
-                      <PhoneCall size={14} />
-                      <span>Start Outbound Call</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startRoleplay({
+                            id: lead.id,
+                            name: `${lead.name} (AI Customer Roleplay)`,
+                            initials: lead.initials,
+                            phone: lead.phone,
+                            avatarBg: lead.avatarBg,
+                            avatarColor: lead.avatarColor,
+                            intent: `AI Voice Roleplay: ${lead.product}`,
+                            product: lead.product,
+                            value: `₹${lead.expectedValue.toLocaleString('en-IN')}`,
+                            personaChallenge: lead.emiNote,
+                          });
+                        }}
+                        className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors"
+                        title="Practise pitch with AI customer simulator"
+                      >
+                        <Sparkles size={14} className="text-purple-600" />
+                        <span>Practise with AI</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => handleStartCall(lead, e)}
+                        className="px-4 py-2 bg-og-forest hover:bg-og-forest-deep text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm"
+                      >
+                        <PhoneCall size={14} />
+                        <span>Start Outbound Call</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
