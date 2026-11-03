@@ -183,7 +183,82 @@ class TelephonyService:
 
         callback_url = f"{settings.PUBLIC_WEBHOOK_URL.rstrip('/')}/api/v1/telephony/webhooks/{settings.TELEPHONY_PROVIDER}"
 
-        # 4. Step 1: Dispatch Agent Leg via provider
+        # 4. Exotel Orchestration Check: Exotel v1 Calls/connect initiates one orchestrated call connecting both parties
+        is_exotel = prov_name == "exotel" or isinstance(self.provider, ExotelTelephonyProvider)
+        if is_exotel and not is_simulated:
+            try:
+                if hasattr(self.provider, "connect"):
+                    call_sid = await self.provider.connect(
+                        call_id=str(call_id),
+                        from_number=agent_endpoint,
+                        to_number=customer_phone,
+                        caller_id=customer_from,
+                        callback_url=callback_url,
+                        time_limit=300,
+                    )
+                else:
+                    req = LegDialRequest(
+                        call_id=str(call_id),
+                        leg_role=CallLegRole.CUSTOMER,
+                        attempt_number=1,
+                        to_endpoint_type=EndpointType.PSTN,
+                        to_endpoint_uri=customer_phone,
+                        from_endpoint_type=EndpointType.PSTN,
+                        from_endpoint_uri=customer_from,
+                        callback_url=callback_url,
+                    )
+                    res = await self.provider.initiate_leg(req)
+                    call_sid = res.telephony_leg_id
+
+                agent_leg.telephony_leg_id = call_sid
+                agent_leg.provider = "exotel"
+                agent_leg.status = CallLegStatus.RINGING
+
+                customer_leg.telephony_leg_id = call_sid
+                customer_leg.provider = "exotel"
+                customer_leg.status = CallLegStatus.RINGING
+
+                call.status = CallStateMachine.transition(call.status, CallStatus.AGENT_RINGING)
+
+                event = CallEventModel(
+                    id=uuid.uuid4(),
+                    call_id=call_id,
+                    event_source="PROVIDER",
+                    provider="exotel",
+                    provider_event_id=f"{call_sid}-connect-initiated",
+                    event_type=CallEventType.CALL_CREATED,
+                    payload={"telephony_call_sid": call_sid, "agent": agent_endpoint, "customer": customer_phone},
+                    occurred_at=now,
+                    received_at=now,
+                )
+                self.db.add(event)
+                await self.db.commit()
+                return await self.get_call_by_id(call_id)
+
+            except Exception as ex:
+                call.status = CallStatus.FAILED
+                agent_leg.status = CallLegStatus.FAILED
+                agent_leg.error_message = str(ex)
+                customer_leg.status = CallLegStatus.FAILED
+                customer_leg.error_message = str(ex)
+                call.ended_at = datetime.now(timezone.utc)
+
+                event = CallEventModel(
+                    id=uuid.uuid4(),
+                    call_id=call_id,
+                    event_source="INTERNAL",
+                    provider="exotel",
+                    provider_event_id=f"fail-exotel-{call_id}",
+                    event_type=CallEventType.CALL_FAILED,
+                    payload={"error": f"Exotel call initiation failed: {str(ex)}"},
+                    occurred_at=datetime.now(timezone.utc),
+                    received_at=datetime.now(timezone.utc),
+                )
+                self.db.add(event)
+                await self.db.commit()
+                raise
+
+        # 5. Standard two-leg dispatch (Twilio, Plivo, Mock): Step 1: Dispatch Agent Leg via provider
         agent_dial_req = LegDialRequest(
             call_id=str(call_id),
             leg_role=CallLegRole.AGENT,
@@ -411,28 +486,47 @@ class TelephonyService:
         if not telephony_leg_id:
             return True, "No telephony_leg_id found in webhook", None
 
-        # 3. Find leg by provider leg id
-        stmt = select(CallLegModel).where(CallLegModel.telephony_leg_id == telephony_leg_id)
-        res = await self.db.execute(stmt)
-        leg = res.scalar_one_or_none()
+        # 3. Find call and leg by CustomField, telephony_leg_id, or RequestUUID
+        call = None
+        leg = None
 
-        if not leg:
-            # Check for Plivo correlation where initiate_call stored RequestUUID
+        # Priority A: Correlate by CustomField (OnGround call UUID)
+        custom_field = raw_body_data.get("CustomField") or raw_body_data.get("custom_field") or telephony_event.call_id
+        if custom_field:
+            try:
+                call_uuid = uuid.UUID(str(custom_field).strip())
+                call = await self.get_call_by_id(call_uuid)
+            except Exception:
+                call = None
+
+        # Priority B: Correlate by provider telephony_leg_id
+        if not call and telephony_leg_id:
+            stmt = select(CallLegModel).where(CallLegModel.telephony_leg_id == telephony_leg_id)
+            res = await self.db.execute(stmt)
+            matching_legs = list(res.scalars().all())
+            if matching_legs:
+                leg = matching_legs[0]
+                call = await self.get_call_by_id(leg.call_id)
+
+        # Priority C: Plivo RequestUUID fallback
+        if not call:
             request_uuid = raw_body_data.get("RequestUUID") or raw_body_data.get("request_uuid")
             if request_uuid:
                 stmt_req = select(CallLegModel).where(CallLegModel.telephony_leg_id == str(request_uuid))
                 res_req = await self.db.execute(stmt_req)
                 leg = res_req.scalar_one_or_none()
                 if leg:
-                    # Correlate and update leg's telephony_leg_id to the permanent CallUUID
                     leg.telephony_leg_id = telephony_leg_id
+                    call = await self.get_call_by_id(leg.call_id)
 
-        if not leg:
+        if not call:
             return True, f"Unrecognized leg {telephony_leg_id}", None
 
-        call = await self.get_call_by_id(leg.call_id)
-        if not call:
-            return True, f"Associated call {leg.call_id} not found", None
+        # Resolve representative leg for call
+        if not leg:
+            leg = next((l for l in call.legs if l.telephony_leg_id == telephony_leg_id), None)
+            if not leg and call.legs:
+                leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), call.legs[0])
 
         # 4. Deduplicate: check if event already recorded
         for evt in call.events:
@@ -457,6 +551,69 @@ class TelephonyService:
         self.db.add(call_event)
 
         # 6. Update leg and call state machine based on event type
+        # For Exotel orchestrated calls: single webhook updates the overall call and both legs
+        if prov_key == "exotel" or isinstance(adapter, ExotelTelephonyProvider):
+            if telephony_event.event_type == CallEventType.LEG_RINGING:
+                for l in call.legs:
+                    l.status = CallLegStatus.RINGING
+                    if not l.initiated_at:
+                        l.initiated_at = now
+            elif telephony_event.event_type == CallEventType.CALL_CONNECTED:
+                for l in call.legs:
+                    l.status = CallLegStatus.ANSWERED
+                    if not l.answered_at:
+                        l.answered_at = now
+                if not call.connected_at:
+                    call.connected_at = now
+                if call.status == CallStatus.AGENT_RINGING:
+                    call.status = CallStateMachine.transition(call.status, CallStatus.CUSTOMER_RINGING)
+                if CallStateMachine.can_transition(call.status, CallStatus.CONNECTED):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.CONNECTED)
+            elif telephony_event.event_type == CallEventType.CALL_COMPLETED:
+                for l in call.legs:
+                    l.status = CallLegStatus.COMPLETED
+                    if not l.ended_at:
+                        l.ended_at = now
+                    if l.answered_at:
+                        l.duration_seconds = max(0, int((now - ensure_utc(l.answered_at)).total_seconds()))
+                if not call.ended_at:
+                    call.ended_at = now
+                if call.connected_at:
+                    call.duration_seconds = max(0, int((now - ensure_utc(call.connected_at)).total_seconds()))
+                    if CallStateMachine.can_transition(call.status, CallStatus.WRAPUP):
+                        call.status = CallStateMachine.transition(call.status, CallStatus.WRAPUP)
+                else:
+                    if CallStateMachine.can_transition(call.status, CallStatus.COMPLETED):
+                        call.status = CallStateMachine.transition(call.status, CallStatus.COMPLETED)
+                    elif CallStateMachine.can_transition(call.status, CallStatus.CANCELLED):
+                        call.status = CallStateMachine.transition(call.status, CallStatus.CANCELLED)
+            elif telephony_event.event_type in {CallEventType.CALL_BUSY, CallEventType.LEG_BUSY}:
+                for l in call.legs:
+                    l.status = CallLegStatus.BUSY
+                    l.ended_at = now
+                call.ended_at = now
+                if CallStateMachine.can_transition(call.status, CallStatus.BUSY):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.BUSY)
+            elif telephony_event.event_type in {CallEventType.CALL_NO_ANSWER, CallEventType.LEG_NO_ANSWER}:
+                for l in call.legs:
+                    l.status = CallLegStatus.NO_ANSWER
+                    l.ended_at = now
+                call.ended_at = now
+                if CallStateMachine.can_transition(call.status, CallStatus.NO_ANSWER):
+                    call.status = CallStateMachine.transition(call.status, CallStatus.NO_ANSWER)
+            elif telephony_event.event_type in {CallEventType.CALL_FAILED, CallEventType.CALL_CANCELLED}:
+                target_status = CallStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallStatus.CANCELLED
+                for l in call.legs:
+                    l.status = CallLegStatus.FAILED if telephony_event.event_type == CallEventType.CALL_FAILED else CallLegStatus.CANCELLED
+                    l.ended_at = now
+                call.ended_at = now
+                if CallStateMachine.can_transition(call.status, target_status):
+                    call.status = CallStateMachine.transition(call.status, target_status)
+
+            await self.db.commit()
+            return True, "Webhook processed successfully", await self.get_call_by_id(call.id)
+
+        # For multi-leg providers (Twilio, Plivo, Mock): individual leg state management
         agent_leg = next((l for l in call.legs if l.leg_role == CallLegRole.AGENT), None)
         customer_leg = next((l for l in call.legs if l.leg_role == CallLegRole.CUSTOMER), None)
 
@@ -677,19 +834,20 @@ class TelephonyService:
         if agent_leg.status in terminal_statuses or customer_leg.status in terminal_statuses:
             raise ValueError("Cannot bridge legs that are already terminated")
 
-        # For real carrier calls, both handsets must have answered before bridging
-        if not call.is_simulated and settings.TELEPHONY_PROVIDER in ("twilio", "plivo", "exotel"):
+        # For real carrier calls, both handsets must have answered before bridging (except Exotel which bridges automatically)
+        if not call.is_simulated and isinstance(self.provider, (TwilioTelephonyProvider, PlivoTelephonyProvider)):
             if agent_leg.status != CallLegStatus.ANSWERED or customer_leg.status != CallLegStatus.ANSWERED:
                 raise ValueError(
                     f"Cannot bridge legs until both have answered. Current: Agent={agent_leg.status.value}, Customer={customer_leg.status.value}"
                 )
 
         now = datetime.now(timezone.utc)
-        await self.provider.bridge_legs(
-            call_id=str(call.id),
-            agent_leg_id=agent_leg.telephony_leg_id,
-            customer_leg_id=customer_leg.telephony_leg_id,
-        )
+        if not isinstance(self.provider, ExotelTelephonyProvider):
+            await self.provider.bridge_legs(
+                call_id=str(call.id),
+                agent_leg_id=agent_leg.telephony_leg_id,
+                customer_leg_id=customer_leg.telephony_leg_id,
+            )
 
         if customer_leg.status != CallLegStatus.ANSWERED:
             customer_leg.status = CallLegStatus.ANSWERED

@@ -1,5 +1,7 @@
 import hashlib
 import hmac
+import json
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 import httpx
@@ -15,11 +17,70 @@ from backend.app.domains.telephony.base import (
     TelephonyEvent,
 )
 
+
+def parse_exotel_response_body(body_text: str) -> Dict[str, Any]:
+    """
+    Safely parses Exotel response bodies across both XML and JSON formats.
+    Exotel returns XML for errors or when requested, and JSON when configured.
+    """
+    body_text = (body_text or "").strip()
+    if not body_text:
+        return {}
+
+    if body_text.startswith("<"):
+        try:
+            root = ET.fromstring(body_text)
+            # 1. Check for RestException
+            rest_exc = root.find("RestException")
+            if rest_exc is not None:
+                status_el = rest_exc.find("Status")
+                msg_el = rest_exc.find("Message")
+                code_el = rest_exc.find("Code")
+                status_val = None
+                if status_el is not None and status_el.text:
+                    try:
+                        status_val = int(status_el.text.strip())
+                    except ValueError:
+                        status_val = status_el.text.strip()
+                return {
+                    "RestException": {
+                        "Status": status_val,
+                        "Message": msg_el.text.strip() if msg_el is not None and msg_el.text else "",
+                        "Code": code_el.text.strip() if code_el is not None and code_el.text else "",
+                    }
+                }
+
+            # 2. Check for Call element
+            call_el = root.find("Call")
+            if call_el is not None:
+                sid_el = call_el.find("Sid")
+                status_el = call_el.find("Status")
+                return {
+                    "Call": {
+                        "Sid": sid_el.text.strip() if sid_el is not None and sid_el.text else "",
+                        "Status": status_el.text.strip() if status_el is not None and status_el.text else "",
+                    }
+                }
+
+            # 3. Generic element mapping
+            result: Dict[str, Any] = {}
+            for child in root:
+                result[child.tag] = child.text.strip() if child.text else ""
+            return result
+        except Exception:
+            return {}
+
+    try:
+        return json.loads(body_text)
+    except Exception:
+        return {}
+
+
 class ExotelTelephonyProvider(TelephonyProvider):
     """
-    Concrete TelephonyProvider implementation for the Exotel Voice API.
-    Supports outbound call leg initiation, leg termination via ExoML Hangup action,
-    multi-party bridge creation, HMAC-SHA256 signature verification, and event normalization.
+    Concrete TelephonyProvider implementation for the Exotel Voice v1 API.
+    Supports single orchestrated two-party outbound calls via POST /v1/Accounts/{account_sid}/Calls/connect,
+    v1 call status inspection and termination, HMAC-SHA256 signature verification, and event normalization.
     """
 
     def __init__(
@@ -59,138 +120,132 @@ class ExotelTelephonyProvider(TelephonyProvider):
             )
         return (self.api_key.strip(), self.api_token.strip())
 
-    async def initiate_leg(self, request: LegDialRequest) -> LegDialResponse:
+    async def connect(
+        self,
+        call_id: str,
+        from_number: str,
+        to_number: str,
+        caller_id: Optional[str] = None,
+        callback_url: Optional[str] = None,
+        time_limit: int = 300,
+    ) -> str:
         """
-        Initiates an outbound call leg via Exotel Voice API (POST /v2/accounts/{account_sid}/legs).
+        Initiates an orchestrated outbound call connecting agent (From) and customer (To) via
+        POST /v1/Accounts/{account_sid}/Calls/connect.
+        Returns the Exotel Call.Sid.
         """
         auth = self.get_auth()
-
-        from_number = request.from_endpoint_uri or self.caller_id
+        effective_caller_id = caller_id or self.caller_id
+        if not effective_caller_id:
+            raise ValueError("No valid Caller ID (ExoPhone) provided for outbound Exotel call.")
         if not from_number:
-            raise ValueError("No valid Caller ID (From number / ExoPhone) provided for outbound Exotel call.")
+            raise ValueError("No valid From number (agent phone) provided for outbound Exotel call.")
+        if not to_number:
+            raise ValueError("No valid To number (customer phone) provided for outbound Exotel call.")
 
-        api_url = f"{self.api_base_url}/v2/accounts/{self.account_sid}/legs"
-        webhook_url = f"{self.webhook_base_url}/api/v1/telephony/webhooks/exotel"
+        api_url = f"{self.api_base_url}/v1/Accounts/{self.account_sid}/Calls/connect"
+        webhook_url = callback_url or f"{self.webhook_base_url}/api/v1/telephony/webhooks/exotel"
 
-        payload = {
-            "contact_uri": request.to_endpoint_uri,
-            "exophone": from_number,
-            "leg_event_endpoint": webhook_url,
-            "network_type": "pstn",
-            "timeout": 30,
-            "time_limit": 14400,
+        data = {
+            "From": from_number,
+            "To": to_number,
+            "CallerId": effective_caller_id,
+            "StatusCallback": webhook_url,
+            "StatusCallbackEvents": ["terminal", "answered"],
+            "CustomField": call_id,
+            "TimeLimit": str(time_limit),
         }
-
-        headers = {"Content-Type": "application/json"}
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
                 api_url,
-                json=payload,
-                headers=headers,
+                data=data,
                 auth=auth,
             )
 
-        if resp.status_code not in (200, 201, 202):
-            error_detail = resp.text
-            try:
-                err_json = resp.json()
-                error_detail = (
-                    err_json.get("response", {}).get("error_data", {}).get("message")
-                    or err_json.get("error_data", {}).get("message")
-                    or err_json.get("message")
-                    or resp.text
-                )
-            except Exception:
-                pass
-            raise RuntimeError(f"Exotel API Error ({resp.status_code}): {error_detail}")
+        if resp.status_code not in (200, 201):
+            err_data = parse_exotel_response_body(resp.text)
+            rest_exc = err_data.get("RestException") or {}
+            err_msg = (
+                rest_exc.get("Message")
+                or err_data.get("message")
+                or err_data.get("error_data", {}).get("message")
+                or resp.text
+            )
+            err_code = rest_exc.get("Code") or err_data.get("code") or ""
+            err_status = rest_exc.get("Status") or resp.status_code
+            error_str = f"Exotel API Error ({err_status})"
+            if err_code:
+                error_str += f" [Code {err_code}]"
+            error_str += f": {err_msg}"
+            raise RuntimeError(error_str)
 
-        data = resp.json()
-        leg_sid = (
-            data.get("response", {}).get("data", {}).get("leg_sid")
-            or data.get("data", {}).get("leg_sid")
-            or data.get("leg_sid")
-            or data.get("Call", {}).get("Sid")
-            or data.get("sid")
-            or data.get("Sid")
+        body_data = parse_exotel_response_body(resp.text)
+        call_obj = body_data.get("Call") or body_data
+        call_sid = (
+            call_obj.get("Sid")
+            or call_obj.get("sid")
+            or body_data.get("sid")
+            or body_data.get("CallSid")
             or ""
+        )
+        if not call_sid:
+            raise RuntimeError("Exotel API returned success but no Call.Sid found in response")
+
+        return call_sid
+
+    async def initiate_leg(self, request: LegDialRequest) -> LegDialResponse:
+        """
+        Initiates an outbound call leg via Exotel Voice v1 Calls/connect.
+        Note: For full two-leg OnGround calls, TelephonyService invokes connect() directly.
+        """
+        from_number = request.from_endpoint_uri or self.caller_id
+        if not from_number:
+            raise ValueError("No valid Caller ID (From number / ExoPhone) provided for outbound Exotel call.")
+
+        call_sid = await self.connect(
+            call_id=request.call_id,
+            from_number=from_number,
+            to_number=request.to_endpoint_uri,
+            caller_id=self.caller_id or from_number,
+            callback_url=request.callback_url,
+            time_limit=300,
         )
 
         return LegDialResponse(
-            telephony_leg_id=leg_sid,
+            telephony_leg_id=call_sid,
             provider="exotel",
             is_simulated=False,
         )
 
     async def terminate_leg(self, telephony_leg_id: str) -> None:
         """
-        Terminates an active or ringing call leg via Exotel Leg Actions API.
+        Terminates an active call via Exotel v1 Calls API.
+        All unsupported v2 endpoints are removed.
         """
-        if not self.account_sid or not self.api_key or not self.api_token:
-            return
-        if not telephony_leg_id:
+        if not self.account_sid or not self.api_key or not self.api_token or not telephony_leg_id:
             return
 
-        auth = (self.api_key.strip(), self.api_token.strip())
-        api_url = f"{self.api_base_url}/v2/accounts/{self.account_sid}/legs/{telephony_leg_id}/actions"
-        payload = {
-            "action_custom_param": "hangup_leg",
-            "exoml": '<?xml version="1.0" encoding="UTF-8"?><Flow><Hangup></Hangup></Flow>',
-        }
-        headers = {"Content-Type": "application/json"}
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                api_url,
-                json=payload,
-                headers=headers,
-                auth=auth,
-            )
-            # 200, 202, 204, or 404 (already terminated) are treated gracefully
-            if resp.status_code not in (200, 202, 204, 404):
-                pass
+        auth = self.get_auth()
+        api_url = f"{self.api_base_url}/v1/Accounts/{self.account_sid}/Calls/{telephony_leg_id}"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    api_url,
+                    data={"Status": "completed"},
+                    auth=auth,
+                )
+                if resp.status_code not in (200, 202, 204, 404, 405):
+                    pass
+        except Exception:
+            pass
 
     async def bridge_legs(self, call_id: str, agent_leg_id: str, customer_leg_id: str) -> None:
         """
-        Bridges media between agent and customer legs into an Exotel multi-party audio bridge.
-        (POST /v2/accounts/{account_sid}/bridges)
+        In Exotel v1, Calls/connect creates an orchestrated two-party call that connects
+        and bridges agent and customer automatically. No separate /bridges endpoint exists in v1.
         """
-        auth = self.get_auth()
-
-        if not agent_leg_id or not customer_leg_id:
-            raise ValueError("Both agent_leg_id and customer_leg_id are required to bridge legs")
-
-        api_url = f"{self.api_base_url}/v2/accounts/{self.account_sid}/bridges"
-        webhook_url = f"{self.webhook_base_url}/api/v1/telephony/webhooks/exotel"
-
-        payload = {
-            "leg_sids": [agent_leg_id, customer_leg_id],
-            "bridge_event_endpoint": webhook_url,
-            "absorb_dtmf": False,
-        }
-        headers = {"Content-Type": "application/json"}
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                api_url,
-                json=payload,
-                headers=headers,
-                auth=auth,
-            )
-
-        if resp.status_code not in (200, 201, 202):
-            error_detail = resp.text
-            try:
-                err_json = resp.json()
-                error_detail = (
-                    err_json.get("response", {}).get("error_data", {}).get("message")
-                    or err_json.get("error_data", {}).get("message")
-                    or err_json.get("message")
-                    or resp.text
-                )
-            except Exception:
-                pass
-            raise RuntimeError(f"Exotel bridge failed ({resp.status_code}): {error_detail}")
+        return
 
     def verify_webhook_signature(
         self, raw_headers: Dict[str, str], raw_body: bytes, request_url: Optional[str] = None
@@ -237,25 +292,38 @@ class ExotelTelephonyProvider(TelephonyProvider):
     ) -> TelephonyEvent:
         """
         Parses verified Exotel webhook payload into canonical TelephonyEvent.
-        Supports both v2 real-time leg lifecycle events and v1 StatusCallback formats.
+        Supports both v1 Calls/connect StatusCallback and v2 event payloads.
+        Correlates CustomField with OnGround call_id.
         """
-        leg_id = (
-            raw_body.get("leg_sid")
-            or raw_body.get("LegSid")
-            or raw_body.get("CallSid")
+        call_sid = (
+            raw_body.get("CallSid")
             or raw_body.get("call_sid")
             or raw_body.get("Sid")
             or raw_body.get("sid")
+            or raw_body.get("leg_sid")
+            or raw_body.get("LegSid")
             or (raw_body.get("data") if isinstance(raw_body.get("data"), dict) else {}).get("leg_sid")
+            or ""
+        )
+
+        custom_field = (
+            raw_body.get("CustomField")
+            or raw_body.get("custom_field")
             or ""
         )
 
         event_name = (
             raw_body.get("event_name")
-            or raw_body.get("Status")
+            or raw_body.get("EventType")
+            or (raw_body.get("event_type") if raw_body.get("event_type") != "leg_lifecycle_event" else "")
+            or ""
+        ).lower()
+
+        status_name = (
+            raw_body.get("Status")
             or raw_body.get("status")
+            or raw_body.get("CallStatus")
             or (raw_body.get("data") if isinstance(raw_body.get("data"), dict) else {}).get("state")
-            or raw_body.get("event_type")
             or ""
         ).lower()
 
@@ -266,15 +334,15 @@ class ExotelTelephonyProvider(TelephonyProvider):
         ).lower()
 
         status_map = {
-            "leg_connecting": CallEventType.CALL_CREATED,
-            "connecting": CallEventType.CALL_CREATED,
             "queued": CallEventType.CALL_CREATED,
-            "leg_ringing": CallEventType.LEG_RINGING,
+            "connecting": CallEventType.CALL_CREATED,
+            "leg_connecting": CallEventType.CALL_CREATED,
             "ringing": CallEventType.LEG_RINGING,
-            "leg_answered": CallEventType.CALL_CONNECTED,
-            "answered": CallEventType.CALL_CONNECTED,
-            "connected": CallEventType.CALL_CONNECTED,
+            "leg_ringing": CallEventType.LEG_RINGING,
             "in-progress": CallEventType.CALL_CONNECTED,
+            "answered": CallEventType.CALL_CONNECTED,
+            "leg_answered": CallEventType.CALL_CONNECTED,
+            "connected": CallEventType.CALL_CONNECTED,
             "completed": CallEventType.CALL_COMPLETED,
             "busy": CallEventType.LEG_BUSY,
             "no-answer": CallEventType.LEG_NO_ANSWER,
@@ -284,21 +352,27 @@ class ExotelTelephonyProvider(TelephonyProvider):
             "canceled": CallEventType.CALL_CANCELLED,
         }
 
-        if event_name in ("leg_terminated", "terminal"):
-            event_type = status_map.get(terminal_status, CallEventType.CALL_COMPLETED)
+        if event_name in ("leg_answered", "answered") or status_name in ("in-progress", "answered", "connected"):
+            event_type = CallEventType.CALL_CONNECTED
+        elif event_name in ("terminal", "leg_terminated"):
+            event_type = status_map.get(terminal_status or status_name, CallEventType.CALL_COMPLETED)
+        elif event_name in status_map:
+            event_type = status_map[event_name]
+        elif status_name in status_map:
+            event_type = status_map[status_name]
         else:
-            event_type = status_map.get(
-                event_name,
-                CallEventType.CALL_COMPLETED if "completed" in event_name else CallEventType.CALL_FAILED
-            )
+            event_type = CallEventType.CALL_CREATED
 
-        provider_event_id = f"exotel-{leg_id}-{event_name or terminal_status or 'evt'}-{raw_body.get('SequenceNumber', raw_body.get('sequence_number', '0'))}"
+        # Unique event ID for reliable de-duplication
+        key_status = status_name or event_name or terminal_status or "event"
+        seq = raw_body.get("SequenceNumber", raw_body.get("sequence_number", "0"))
+        provider_event_id = f"exotel-{call_sid}-{key_status}-{seq}"
 
         return TelephonyEvent(
             provider="exotel",
             provider_event_id=provider_event_id,
-            call_id="",
-            telephony_leg_id=leg_id,
+            call_id=str(custom_field),
+            telephony_leg_id=call_sid,
             event_type=event_type,
             occurred_at=datetime.now(timezone.utc),
             raw_payload=raw_body,

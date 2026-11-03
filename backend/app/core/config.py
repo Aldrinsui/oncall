@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     EXOTEL_ACCOUNT_SID: str = ""
     EXOTEL_API_KEY: str = ""
     EXOTEL_API_TOKEN: str = ""
-    EXOTEL_API_BASE_URL: str = "https://cpaas-api.in.exotel.com"
+    EXOTEL_API_BASE_URL: str = "https://api.exotel.com"
     EXOTEL_CALLER_ID: str = ""
 
     # Webhook Shared Secret
