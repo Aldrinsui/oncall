@@ -614,3 +614,102 @@ async def test_plivo_initiate_leg_uses_conference_answer_url(monkeypatch):
     assert res.telephony_leg_id == "PL_CONF_TEST"
     assert captured_payload is not None
     assert captured_payload["answer_url"] == f"https://api.onground.ai/api/v1/telephony/webhooks/plivo/conference?room=conf-{call_id}"
+
+@pytest.mark.asyncio
+async def test_twilio_http_per_leg_caller_id_dispatch(monkeypatch):
+    """Verify Twilio provider posts the exact per-leg Caller ID in HTTP form data for agent and customer legs."""
+    from urllib.parse import parse_qs
+
+    posted_requests = []
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        content_str = request.content.decode("utf-8")
+        parsed = parse_qs(content_str)
+        posted_requests.append(parsed)
+        call_sid = f"CA_LEG_{len(posted_requests)}"
+        return httpx.Response(status_code=201, json={"sid": call_sid})
+
+    mock_transport = httpx.MockTransport(mock_handler)
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: _real_async_client(transport=mock_transport))
+
+    agent_caller_id = "+919800000001"
+    customer_caller_id = "+919800000002"
+    agent_phone = "+919123456789"
+    customer_phone = "+919876543210"
+
+    provider = TwilioTelephonyProvider(
+        account_sid="AC_PER_LEG_TEST",
+        auth_token="auth_token_123",
+        agent_caller_id=agent_caller_id,
+        customer_caller_id=customer_caller_id,
+        caller_id="+919999999999",
+        base_url="https://api.onground.ai",
+    )
+
+    # 1. Dispatch Agent Leg with explicit from_endpoint_uri
+    agent_req = LegDialRequest(
+        call_id="call-leg-test-1",
+        leg_role=CallLegRole.AGENT,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri=agent_phone,
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri=agent_caller_id,
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/twilio",
+    )
+    res_agent = await provider.initiate_leg(agent_req)
+    assert res_agent.telephony_leg_id == "CA_LEG_1"
+
+    # 2. Dispatch Customer Leg with explicit from_endpoint_uri
+    customer_req = LegDialRequest(
+        call_id="call-leg-test-1",
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri=customer_phone,
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri=customer_caller_id,
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/twilio",
+    )
+    res_cust = await provider.initiate_leg(customer_req)
+    assert res_cust.telephony_leg_id == "CA_LEG_2"
+
+    # Verify posted form payloads
+    assert len(posted_requests) == 2
+
+    agent_form = posted_requests[0]
+    assert agent_form["From"] == [agent_caller_id]
+    assert agent_form["To"] == [agent_phone]
+    assert "conf-call-leg-test-1" in agent_form["Twiml"][0]
+
+    cust_form = posted_requests[1]
+    assert cust_form["From"] == [customer_caller_id]
+    assert cust_form["To"] == [customer_phone]
+    assert "conf-call-leg-test-1" in cust_form["Twiml"][0]
+
+    # 3. Test fallback when request.from_endpoint_uri is empty: uses role-specific caller IDs
+    agent_req_fallback = LegDialRequest(
+        call_id="call-leg-test-2",
+        leg_role=CallLegRole.AGENT,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri=agent_phone,
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/twilio",
+    )
+    await provider.initiate_leg(agent_req_fallback)
+    assert posted_requests[2]["From"] == [agent_caller_id]
+
+    cust_req_fallback = LegDialRequest(
+        call_id="call-leg-test-2",
+        leg_role=CallLegRole.CUSTOMER,
+        attempt_number=1,
+        to_endpoint_type=EndpointType.PSTN,
+        to_endpoint_uri=customer_phone,
+        from_endpoint_type=EndpointType.PSTN,
+        from_endpoint_uri="",
+        callback_url="https://api.onground.ai/api/v1/telephony/webhooks/twilio",
+    )
+    await provider.initiate_leg(cust_req_fallback)
+    assert posted_requests[3]["From"] == [customer_caller_id]

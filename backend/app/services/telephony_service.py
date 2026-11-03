@@ -69,16 +69,27 @@ class TelephonyService:
         is_simulated = prov_name == "mock" or isinstance(self.provider, MockTelephonyProvider)
 
         if prov_name == "twilio" and not is_simulated:
-            if not settings.TWILIO_CALLER_ID:
-                raise ValueError("Twilio Caller ID is not configured. Please set TWILIO_CALLER_ID in .env")
-            from_phone = settings.TWILIO_CALLER_ID
+            agent_from = settings.TWILIO_AGENT_CALLER_ID or settings.TWILIO_CALLER_ID
+            customer_from = settings.TWILIO_CUSTOMER_CALLER_ID or settings.TWILIO_CALLER_ID
+            if not agent_from and not customer_from:
+                raise ValueError(
+                    "Twilio Caller ID is not configured. Please set TWILIO_CALLER_ID "
+                    "(or TWILIO_AGENT_CALLER_ID and TWILIO_CUSTOMER_CALLER_ID) in .env"
+                )
+            if not agent_from:
+                raise ValueError("Twilio Agent Caller ID is not configured. Please set TWILIO_AGENT_CALLER_ID or TWILIO_CALLER_ID in .env")
+            if not customer_from:
+                raise ValueError("Twilio Customer Caller ID is not configured. Please set TWILIO_CUSTOMER_CALLER_ID or TWILIO_CALLER_ID in .env")
         elif prov_name == "plivo" and not is_simulated:
             if not settings.PLIVO_CALLER_ID:
                 raise ValueError("Plivo Caller ID is not configured. Please set PLIVO_CALLER_ID in .env")
-            from_phone = settings.PLIVO_CALLER_ID
+            agent_from = settings.PLIVO_CALLER_ID
+            customer_from = settings.PLIVO_CALLER_ID
         else:
             # Mock or offline test provider fallback
-            from_phone = settings.DEV_AGENT_PHONE or "+919000000001"
+            fallback = settings.DEV_AGENT_PHONE or "+919000000001"
+            agent_from = settings.TWILIO_AGENT_CALLER_ID or settings.TWILIO_CALLER_ID or fallback
+            customer_from = settings.TWILIO_CUSTOMER_CALLER_ID or settings.TWILIO_CALLER_ID or fallback
 
         # Webhook URL Validation for production environments
         if prov_name in ("twilio", "plivo") and not is_simulated and settings.ENVIRONMENT == "production":
@@ -117,7 +128,7 @@ class TelephonyService:
             to_endpoint_type="PSTN",
             to_endpoint_uri=customer_phone,
             from_endpoint_type="PSTN",
-            from_endpoint_uri=from_phone,
+            from_endpoint_uri=customer_from,
             status=CallLegStatus.INITIATING,
             initiated_at=now,
         )
@@ -153,7 +164,7 @@ class TelephonyService:
             to_endpoint_type=agent_ep_type,
             to_endpoint_uri=agent_endpoint,
             from_endpoint_type="PSTN",
-            from_endpoint_uri=from_phone,
+            from_endpoint_uri=agent_from,
             status=CallLegStatus.INITIATING,
             initiated_at=now,
         )
@@ -173,7 +184,7 @@ class TelephonyService:
             to_endpoint_type=agent_to_endpoint_type,
             to_endpoint_uri=agent_endpoint,
             from_endpoint_type=EndpointType.PSTN,
-            from_endpoint_uri=from_phone,
+            from_endpoint_uri=agent_from,
             callback_url=callback_url,
         )
 
@@ -213,7 +224,7 @@ class TelephonyService:
             to_endpoint_type=EndpointType.PSTN,
             to_endpoint_uri=customer_phone,
             from_endpoint_type=EndpointType.PSTN,
-            from_endpoint_uri=from_phone,
+            from_endpoint_uri=customer_from,
             callback_url=callback_url,
         )
 

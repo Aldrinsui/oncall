@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     TWILIO_API_KEY_SID: str = ""
     TWILIO_API_KEY_SECRET: str = ""
     TWILIO_CALLER_ID: str = ""
+    TWILIO_AGENT_CALLER_ID: str = ""
+    TWILIO_CUSTOMER_CALLER_ID: str = ""
 
     # Plivo Configuration
     PLIVO_AUTH_ID: str = ""

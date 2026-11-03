@@ -9,6 +9,7 @@ import httpx
 from backend.app.core.config import settings
 from backend.app.domains.common.enums import (
     CallEventType,
+    CallLegRole,
     CallLegStatus,
     EndpointType,
 )
@@ -34,12 +35,16 @@ class TwilioTelephonyProvider(TelephonyProvider):
         base_url: Optional[str] = None,
         api_key_sid: Optional[str] = None,
         api_key_secret: Optional[str] = None,
+        agent_caller_id: Optional[str] = None,
+        customer_caller_id: Optional[str] = None,
     ):
         self.account_sid = account_sid if account_sid is not None else settings.TWILIO_ACCOUNT_SID
         self.auth_token = auth_token if auth_token is not None else settings.TWILIO_AUTH_TOKEN
         self.api_key_sid = api_key_sid if api_key_sid is not None else settings.TWILIO_API_KEY_SID
         self.api_key_secret = api_key_secret if api_key_secret is not None else settings.TWILIO_API_KEY_SECRET
         self.caller_id = caller_id if caller_id is not None else settings.TWILIO_CALLER_ID
+        self.agent_caller_id = agent_caller_id if agent_caller_id is not None else settings.TWILIO_AGENT_CALLER_ID
+        self.customer_caller_id = customer_caller_id if customer_caller_id is not None else settings.TWILIO_CUSTOMER_CALLER_ID
         self.base_url = (base_url or settings.PUBLIC_WEBHOOK_URL).rstrip("/")
 
     def __repr__(self) -> str:
@@ -94,7 +99,15 @@ class TwilioTelephonyProvider(TelephonyProvider):
         """
         auth = self.get_rest_auth()
 
-        from_number = request.from_endpoint_uri or self.caller_id
+        from_number = request.from_endpoint_uri
+        if not from_number:
+            if request.leg_role == CallLegRole.AGENT:
+                from_number = self.agent_caller_id or self.caller_id
+            elif request.leg_role == CallLegRole.CUSTOMER:
+                from_number = self.customer_caller_id or self.caller_id
+            else:
+                from_number = self.caller_id
+
         if not from_number:
             raise ValueError("No valid Caller ID (From number) provided for outbound PSTN call.")
 

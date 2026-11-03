@@ -526,3 +526,85 @@ async def test_leg_failure_terminates_other_leg(client, mock_provider):
     agent_leg = next(l for l in data["legs"] if l["leg_role"] == "AGENT")
     assert agent_leg["status"] == CallLegStatus.CANCELLED.value
 
+@pytest.mark.asyncio
+async def test_per_leg_caller_id_configuration_and_persistence(client, mock_provider, monkeypatch):
+    """Verify each call leg persists and dispatches its dedicated configured caller ID."""
+    agent_caller_id = "+919800000001"
+    customer_caller_id = "+919800000002"
+    agent_phone = "+919123456789"
+    customer_phone = "+919876543210"
+
+    monkeypatch.setattr(settings, "TWILIO_AGENT_CALLER_ID", agent_caller_id)
+    monkeypatch.setattr(settings, "TWILIO_CUSTOMER_CALLER_ID", customer_caller_id)
+    monkeypatch.setattr(settings, "TWILIO_CALLER_ID", "+919999999999")
+
+    headers = {"X-Dev-Agent-Id": settings.DEV_AGENT_ID}
+    payload = {
+        "customer_phone": customer_phone,
+        "customer_name": "Rohan Sharma",
+        "agent_phone": agent_phone,
+        "notes": "Testing per-leg caller ID dispatch",
+    }
+
+    resp = await client.post("/api/v1/calls", json=payload, headers=headers)
+    assert resp.status_code == 201
+    call_data = resp.json()["data"]
+    call_id = call_data["id"]
+
+    # 1. Verify legs in API response
+    agent_leg = next(l for l in call_data["legs"] if l["leg_role"] == "AGENT")
+    customer_leg = next(l for l in call_data["legs"] if l["leg_role"] == "CUSTOMER")
+
+    assert agent_leg["from_endpoint_uri"] == agent_caller_id
+    assert agent_leg["to_endpoint_uri"] == agent_phone
+    assert customer_leg["from_endpoint_uri"] == customer_caller_id
+    assert customer_leg["to_endpoint_uri"] == customer_phone
+
+    # 2. Verify legs in provider dispatch queue
+    assert len(mock_provider.dispatched_legs) == 2
+    dispatched_agent = mock_provider.dispatched_legs[0]
+    dispatched_customer = mock_provider.dispatched_legs[1]
+
+    assert dispatched_agent.leg_role.value == "AGENT"
+    assert dispatched_agent.from_endpoint_uri == agent_caller_id
+    assert dispatched_agent.to_endpoint_uri == agent_phone
+
+    assert dispatched_customer.leg_role.value == "CUSTOMER"
+    assert dispatched_customer.from_endpoint_uri == customer_caller_id
+    assert dispatched_customer.to_endpoint_uri == customer_phone
+
+    # 3. Verify persistence in DB via separate GET
+    get_resp = await client.get(f"/api/v1/calls/{call_id}", headers=headers)
+    assert get_resp.status_code == 200
+    db_legs = get_resp.json()["data"]["legs"]
+    db_agent = next(l for l in db_legs if l["leg_role"] == "AGENT")
+    db_cust = next(l for l in db_legs if l["leg_role"] == "CUSTOMER")
+
+    assert db_agent["from_endpoint_uri"] == agent_caller_id
+    assert db_cust["from_endpoint_uri"] == customer_caller_id
+
+@pytest.mark.asyncio
+async def test_backward_compatible_shared_caller_id_fallback(client, mock_provider, monkeypatch):
+    """Verify fallback to shared TWILIO_CALLER_ID when per-leg caller IDs are not configured."""
+    shared_caller_id = "+919999988888"
+
+    monkeypatch.setattr(settings, "TWILIO_CALLER_ID", shared_caller_id)
+    monkeypatch.setattr(settings, "TWILIO_AGENT_CALLER_ID", "")
+    monkeypatch.setattr(settings, "TWILIO_CUSTOMER_CALLER_ID", "")
+
+    headers = {"X-Dev-Agent-Id": settings.DEV_AGENT_ID}
+    payload = {
+        "customer_phone": "+919876543210",
+        "agent_phone": "+919123456789",
+    }
+
+    resp = await client.post("/api/v1/calls", json=payload, headers=headers)
+    assert resp.status_code == 201
+    call_data = resp.json()["data"]
+
+    agent_leg = next(l for l in call_data["legs"] if l["leg_role"] == "AGENT")
+    customer_leg = next(l for l in call_data["legs"] if l["leg_role"] == "CUSTOMER")
+
+    assert agent_leg["from_endpoint_uri"] == shared_caller_id
+    assert customer_leg["from_endpoint_uri"] == shared_caller_id
+
