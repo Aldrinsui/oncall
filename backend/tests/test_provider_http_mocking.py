@@ -818,8 +818,7 @@ async def test_exotel_http_successful_call_creation(monkeypatch):
     assert params["CustomField"] == ["call-uuid-exotel-1"]
     assert params["TimeLimit"] == ["300"]
     assert "https://api.onground.ai/api/v1/telephony/webhooks/exotel" in params["StatusCallback"][0]
-    assert "terminal" in params["StatusCallbackEvents"]
-    assert "answered" in params["StatusCallbackEvents"]
+    assert params["StatusCallbackEvents"] == ["both"]
 
     # Verify HTTP Basic Auth header
     auth_header = req_obj.headers.get("authorization", "")
