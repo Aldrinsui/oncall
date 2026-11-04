@@ -8,12 +8,11 @@ import {
   isConfiguredBackendAvailable,
   initiateOutboundCall,
 } from '../telephonyApi';
-import fs from 'fs';
-import path from 'path';
+import vercelConfig from '../../../vercel.json';
 
 describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', () => {
   const originalFetch = globalThis.fetch;
-  const originalEnv = process.env;
+  const originalEnv = typeof process !== 'undefined' ? process.env : undefined;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -32,7 +31,9 @@ describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', ()
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    process.env = originalEnv;
+    if (typeof process !== 'undefined' && originalEnv) {
+      process.env = originalEnv;
+    }
     if (typeof document !== 'undefined') {
       document.body.style.overflow = '';
     }
@@ -281,15 +282,12 @@ describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', ()
     });
 
     it('verifies vercel.json contains valid SPA fallback rewrite to index.html', () => {
-      const vercelJsonPath = path.resolve(__dirname, '../../../vercel.json');
-      const vercelConfig = JSON.parse(fs.readFileSync(vercelJsonPath, 'utf8'));
-
       expect(vercelConfig.rewrites).toBeDefined();
       const spaRewrite = vercelConfig.rewrites.find(
         (r: any) => r.destination === '/index.html'
       );
       expect(spaRewrite).toBeDefined();
-      expect(spaRewrite.source).toBe('/(.*)');
+      expect(spaRewrite?.source).toBe('/(.*)');
     });
   });
 });
