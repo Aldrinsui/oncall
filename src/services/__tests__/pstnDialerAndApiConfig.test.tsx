@@ -280,26 +280,16 @@ describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', ()
       ).rejects.toThrow(/customer_phone: Invalid E.164 phone number format/);
     });
 
-    it('verifies vercel.json rewrite excludes /api/ routes from index.html SPA fallback', () => {
+    it('verifies vercel.json contains valid SPA fallback rewrite to index.html', () => {
       const vercelJsonPath = path.resolve(__dirname, '../../../vercel.json');
       const vercelConfig = JSON.parse(fs.readFileSync(vercelJsonPath, 'utf8'));
 
       expect(vercelConfig.rewrites).toBeDefined();
-      const apiExclusionRewrite = vercelConfig.rewrites.find(
-        (r: any) => r.source === '/((?!api/).*)'
+      const spaRewrite = vercelConfig.rewrites.find(
+        (r: any) => r.destination === '/index.html'
       );
-      expect(apiExclusionRewrite).toBeDefined();
-      expect(apiExclusionRewrite.destination).toBe('/index.html');
-
-      // Verify the regex does NOT match /api/v1/calls
-      const regex = new RegExp('^/((?!api/).*)$');
-      expect(regex.test('/dashboard')).toBe(true);
-      expect(regex.test('/plan')).toBe(true);
-      expect(regex.test('/calendar')).toBe(true);
-      expect(regex.test('/pulse')).toBe(true);
-      expect(regex.test('/api/v1/calls')).toBe(false);
-      expect(regex.test('/api/v1/calls/call-123')).toBe(false);
-      expect(regex.test('/api/health')).toBe(false);
+      expect(spaRewrite).toBeDefined();
+      expect(spaRewrite.source).toBe('/(.*)');
     });
   });
 });

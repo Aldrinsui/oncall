@@ -259,8 +259,11 @@ export function aggregateWeeklyChartData(
     }
   });
 
+  // Determine target day: match today's day of week, or fallback to 'Tue' (default demo active shift day)
+  const targetDay = baseChartData.some((p) => p.day === todayDayName) ? todayDayName : 'Tue';
+
   return baseChartData.map((point) => {
-    if (point.day === todayDayName || (todayDayName === 'Sun' && point.day === 'Sun') || point.day === 'Tue') {
+    if (point.day === targetDay) {
       return {
         ...point,
         calls: point.calls + additionalCalls,
