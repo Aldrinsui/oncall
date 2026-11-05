@@ -5,7 +5,12 @@ from datetime import datetime, timezone
 
 from backend.app.main import app
 from backend.app.core.config import settings
-from backend.app.core.database import async_engine, Base, AsyncSessionLocal
+from backend.app.core.database import Base, get_db
+from backend.tests.conftest import (
+    test_async_engine,
+    TestAsyncSessionLocal,
+    override_get_db,
+)
 from backend.app.domains.telephony.mock_provider import MockTelephonyProvider
 from backend.app.domains.telephony.provider_factory import set_telephony_provider
 from backend.app.domains.telephony.twilio_provider import TwilioTelephonyProvider
@@ -18,11 +23,13 @@ from backend.app.services.telephony_service import TelephonyService
 
 @pytest.fixture(autouse=True)
 async def setup_test_db():
-    async with async_engine.begin() as conn:
+    app.dependency_overrides[get_db] = override_get_db
+    async with test_async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    async with async_engine.begin() as conn:
+    async with test_async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    app.dependency_overrides.pop(get_db, None)
 
 @pytest.fixture
 def mock_provider():
@@ -305,7 +312,7 @@ async def test_call_lifecycle_ringing_connected_completed(client, mock_provider)
 @pytest.mark.asyncio
 async def test_partial_initiation_failure_rolls_back_agent_leg(monkeypatch):
     """Verify that if customer leg dispatch fails, the agent leg is rolled back and hung up."""
-    async with AsyncSessionLocal() as session:
+    async with TestAsyncSessionLocal() as session:
         mock = MockTelephonyProvider()
         service = TelephonyService(session, provider=mock)
 
@@ -459,7 +466,7 @@ async def test_production_mode_rejects_missing_agent_endpoint(monkeypatch):
     monkeypatch.setattr(settings, "ENVIRONMENT", "production")
     monkeypatch.setattr(settings, "DEV_AGENT_PHONE", "+919000000001")
 
-    async with AsyncSessionLocal() as session:
+    async with TestAsyncSessionLocal() as session:
         mock = MockTelephonyProvider()
         service = TelephonyService(session, provider=mock)
 

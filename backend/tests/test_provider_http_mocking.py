@@ -22,19 +22,26 @@ from backend.app.domains.telephony.plivo_provider import PlivoTelephonyProvider
 from backend.app.domains.telephony.exotel_provider import ExotelTelephonyProvider
 from backend.app.domains.telephony.provider_factory import get_telephony_provider
 from backend.app.services.telephony_service import TelephonyService
-from backend.app.core.database import async_engine, Base, AsyncSessionLocal
+from backend.app.core.database import Base, get_db
 from backend.app.main import app
+from backend.tests.conftest import (
+    test_async_engine,
+    TestAsyncSessionLocal,
+    override_get_db,
+)
 
 _real_async_client = httpx.AsyncClient
 
 @pytest.fixture(autouse=True)
 async def setup_test_db():
     get_telephony_provider(force_reload=True)
-    async with async_engine.begin() as conn:
+    app.dependency_overrides[get_db] = override_get_db
+    async with test_async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    async with async_engine.begin() as conn:
+    async with test_async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    app.dependency_overrides.pop(get_db, None)
     get_telephony_provider(force_reload=True)
 
 # ==============================================================================
@@ -403,7 +410,7 @@ async def test_caller_id_strictly_enforces_configured_provider_caller_id(monkeyp
     Verify TelephonyService uses configured TWILIO_CALLER_ID / PLIVO_CALLER_ID
     and NEVER silently falls back to DEV_AGENT_PHONE for real providers.
     """
-    async with AsyncSessionLocal() as session:
+    async with TestAsyncSessionLocal() as session:
         # 1. Twilio missing caller ID raises ValueError
         monkeypatch.setattr(settings, "TELEPHONY_PROVIDER", "twilio")
         monkeypatch.setattr(settings, "TWILIO_CALLER_ID", "")
@@ -456,7 +463,7 @@ async def test_plivo_answer_and_conference_endpoints():
 @pytest.mark.asyncio
 async def test_production_mode_requires_https_webhook_url(monkeypatch):
     """Verify production environment rejects localhost or non-https webhook URLs."""
-    async with AsyncSessionLocal() as session:
+    async with TestAsyncSessionLocal() as session:
         monkeypatch.setattr(settings, "ENVIRONMENT", "production")
         monkeypatch.setattr(settings, "TELEPHONY_PROVIDER", "twilio")
         monkeypatch.setattr(settings, "TWILIO_CALLER_ID", "+15551234567")
