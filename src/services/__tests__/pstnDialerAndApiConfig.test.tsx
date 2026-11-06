@@ -201,6 +201,20 @@ describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', ()
       localStorage.setItem('onground_backend_url', 'https://api.example.com///');
       expect(getApiBaseUrl()).toBe('https://api.example.com');
       localStorage.removeItem('onground_backend_url');
+
+      // Test window.ONCALL_API_URL
+      const originalWin = (globalThis as any).window;
+      try {
+        (globalThis as any).window = { ONCALL_API_URL: 'https://api-window.example.com/api/v1/' };
+        expect(getApiBaseUrl()).toBe('https://api-window.example.com');
+      } finally {
+        (globalThis as any).window = originalWin;
+      }
+
+      // Test ONCALL_API_URL in localStorage
+      localStorage.setItem('ONCALL_API_URL', 'https://api-storage.example.com/');
+      expect(getApiBaseUrl()).toBe('https://api-storage.example.com');
+      localStorage.removeItem('ONCALL_API_URL');
     });
 
     it('normalizeBackendOrigin removes trailing slashes and mistakenly included /api/v1 to prevent duplicate paths', () => {

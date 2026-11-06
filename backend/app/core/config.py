@@ -34,7 +34,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "https://oncall-ashy.vercel.app",
     ]
-    CORS_ORIGIN_REGEX: Optional[str] = r"^https://oncall-[a-zA-Z0-9_-]+-aldrinsuis-projects\.vercel\.app$"
+    CORS_ORIGIN_REGEX: Optional[str] = r"^https://oncall(-[a-zA-Z0-9_-]+)?-aldrinsuis-projects\.vercel\.app$"
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -172,11 +172,13 @@ class Settings(BaseSettings):
             if url.startswith("sqlite:///"):
                 return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
             if url.startswith("postgresql://"):
-                return url.replace("postgresql://", "postgresql+asyncpg://", 1)
-            if url.startswith("postgresql+psycopg2://"):
-                return url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
-            if url.startswith("postgres://"):
-                return url.replace("postgres://", "postgresql+asyncpg://", 1)
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgresql+psycopg2://"):
+                url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+            elif url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+            if "sslmode=" in url:
+                url = url.replace("sslmode=", "ssl=")
             return url
         return "sqlite+aiosqlite:///./oncall.db"
 

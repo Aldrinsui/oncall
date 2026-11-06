@@ -67,14 +67,18 @@ async def test_cors_production_vercel_origin(client):
 @pytest.mark.asyncio
 async def test_cors_vercel_preview_deployments(client):
     """Verify CORS permits project preview URLs matching oncall-<deployment-id>-aldrinsuis-projects.vercel.app."""
-    preview_origin = "https://oncall-d5q1a2b-aldrinsuis-projects.vercel.app"
-    headers = {
-        "Origin": preview_origin,
-        "Access-Control-Request-Method": "GET",
-    }
-    res = await client.options("/api/v1/calls", headers=headers)
-    assert res.status_code == 200
-    assert res.headers.get("access-control-allow-origin") == preview_origin
+    for preview_origin in [
+        "https://oncall-d5q1a2b-aldrinsuis-projects.vercel.app",
+        "https://oncall-git-fix-branch-aldrinsuis-projects.vercel.app",
+        "https://oncall-aldrinsuis-projects.vercel.app",
+    ]:
+        headers = {
+            "Origin": preview_origin,
+            "Access-Control-Request-Method": "GET",
+        }
+        res = await client.options("/api/v1/calls", headers=headers)
+        assert res.status_code == 200
+        assert res.headers.get("access-control-allow-origin") == preview_origin
 
 @pytest.mark.asyncio
 async def test_cors_rejects_unrelated_vercel_projects(client):
@@ -162,6 +166,18 @@ def test_production_database_valid_remote_postgres_scheme_converted():
         TELEPHONY_PROVIDER="mock",
     )
     assert s.async_database_url == "postgresql+asyncpg://user:secret@db.cloud-cluster.internal:5432/prod_db"
+
+def test_production_database_valid_remote_postgres_sslmode_converted():
+    """Verify production settings normalize sslmode=require to ssl=require for asyncpg."""
+    s = Settings(
+        ENVIRONMENT="production",
+        DATABASE_URL="postgresql://user:secret@db.neon.tech:5432/prod_db?sslmode=require",
+        PUBLIC_WEBHOOK_URL="https://api.example.com",
+        TELEPHONY_PROVIDER="mock",
+    )
+    assert "ssl=require" in s.async_database_url
+    assert "sslmode=" not in s.async_database_url
+    assert s.async_database_url.startswith("postgresql+asyncpg://")
 
 def test_development_sqlite_support_preserved():
     """Verify SQLite support is fully preserved for development and isolated testing."""

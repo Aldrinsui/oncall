@@ -10,7 +10,7 @@ from backend.app.core.config import settings
 class Base(DeclarativeBase):
     pass
 
-engine_kwargs = {"echo": False}
+engine_kwargs = {"echo": False, "pool_pre_ping": True}
 if settings.async_database_url.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"check_same_thread": False}
 

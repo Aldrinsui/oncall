@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     if provider in ("twilio", "plivo", "exotel"):
         url = settings.PUBLIC_WEBHOOK_URL.lower().strip()
         if not url.startswith("https://") or "localhost" in url or "127.0.0.1" in url:
-            if settings.ENVIRONMENT == "production":
+            if settings.ENVIRONMENT.lower() == "production":
                 raise ValueError(
                     f"Production startup failed: Provider '{provider}' requires a publicly reachable HTTPS "
                     f"PUBLIC_WEBHOOK_URL. Configured: '{settings.PUBLIC_WEBHOOK_URL}'"

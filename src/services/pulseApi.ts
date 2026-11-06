@@ -23,11 +23,12 @@ export const getPulseApiBase = (): string => {
   return '/api/v1';
 };
 
-// Default development identity headers
+// Default development and production identity headers
 const DEFAULT_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json',
   'X-Agent-Id': '00000000-0000-0000-0000-000000000001',
   'X-Store-Id': 'Koramangala',
+  'Authorization': 'Bearer oncall-session-token',
 };
 
 // In-memory fallback cache for offline resilience

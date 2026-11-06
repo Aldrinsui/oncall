@@ -46,7 +46,7 @@ async def get_current_agent(
     Enforces BearerAuth in production; supports test/dev agent resolution in development.
     """
     # 1. In production, strictly require Bearer token
-    if settings.ENVIRONMENT == "production":
+    if settings.ENVIRONMENT.lower() == "production":
         if not authorization or not authorization.startswith("Bearer "):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
