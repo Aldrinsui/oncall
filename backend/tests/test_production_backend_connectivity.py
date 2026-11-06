@@ -66,18 +66,36 @@ async def test_cors_production_vercel_origin(client):
 
 @pytest.mark.asyncio
 async def test_cors_vercel_preview_deployments(client):
-    """Verify CORS permits dynamic Vercel preview branch deployments via regex."""
+    """Verify CORS permits project preview URLs matching oncall-<deployment-id>-aldrinsuis-projects.vercel.app."""
+    preview_origin = "https://oncall-d5q1a2b-aldrinsuis-projects.vercel.app"
     headers = {
-        "Origin": "https://oncall-git-feat-branch.vercel.app",
+        "Origin": preview_origin,
         "Access-Control-Request-Method": "GET",
     }
     res = await client.options("/api/v1/calls", headers=headers)
     assert res.status_code == 200
-    assert res.headers.get("access-control-allow-origin") == "https://oncall-git-feat-branch.vercel.app"
+    assert res.headers.get("access-control-allow-origin") == preview_origin
+
+@pytest.mark.asyncio
+async def test_cors_rejects_unrelated_vercel_projects(client):
+    """Verify CORS strictly rejects arbitrary or unrelated Vercel-hosted websites."""
+    unrelated_origins = [
+        "https://arbitrary-attacker.vercel.app",
+        "https://otherproject-aldrinsuis-projects.vercel.app",
+        "https://oncall-attacker-otheruser.vercel.app",
+        "https://evil-oncall-aldrinsuis-projects.vercel.app",
+    ]
+    for origin in unrelated_origins:
+        headers = {
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+        }
+        res = await client.options("/api/v1/calls", headers=headers)
+        assert res.headers.get("access-control-allow-origin") != origin, f"Origin {origin} should be rejected"
 
 @pytest.mark.asyncio
 async def test_cors_rejects_unauthorized_origin(client):
-    """Verify CORS does not allow arbitrary unauthorized origins."""
+    """Verify CORS does not allow arbitrary unauthorized non-Vercel origins."""
     headers = {
         "Origin": "https://unauthorized-attacker-site.com",
         "Access-Control-Request-Method": "POST",
@@ -97,7 +115,7 @@ def test_production_database_validation_missing():
 
 def test_production_database_validation_relative_sqlite():
     """Verify production settings reject relative SQLite database."""
-    with pytest.raises(ValueError, match="relative or ephemeral SQLite database"):
+    with pytest.raises(ValueError, match="cannot use SQLite"):
         Settings(
             ENVIRONMENT="production",
             DATABASE_URL="sqlite+aiosqlite:///./oncall.db",
@@ -105,8 +123,18 @@ def test_production_database_validation_relative_sqlite():
             TELEPHONY_PROVIDER="mock",
         )
 
-def test_production_database_validation_localhost():
-    """Verify production settings reject database pointing to localhost."""
+def test_production_database_validation_absolute_sqlite():
+    """Verify production settings reject absolute SQLite database."""
+    with pytest.raises(ValueError, match="cannot use SQLite"):
+        Settings(
+            ENVIRONMENT="production",
+            DATABASE_URL="sqlite+aiosqlite:////var/data/prod.db",
+            PUBLIC_WEBHOOK_URL="https://api.example.com",
+            TELEPHONY_PROVIDER="mock",
+        )
+
+def test_production_database_validation_localhost_postgres():
+    """Verify production settings reject PostgreSQL database pointing to localhost."""
     with pytest.raises(ValueError, match="cannot point to localhost"):
         Settings(
             ENVIRONMENT="production",
@@ -115,8 +143,8 @@ def test_production_database_validation_localhost():
             TELEPHONY_PROVIDER="mock",
         )
 
-def test_production_database_valid_persistent():
-    """Verify production settings accept valid remote managed database."""
+def test_production_database_valid_remote_postgresql():
+    """Verify production settings accept valid remote hosted PostgreSQL database."""
     s = Settings(
         ENVIRONMENT="production",
         DATABASE_URL="postgresql+asyncpg://user:secret@db.cloud-cluster.internal:5432/prod_db",
@@ -124,6 +152,32 @@ def test_production_database_valid_persistent():
         TELEPHONY_PROVIDER="mock",
     )
     assert s.async_database_url == "postgresql+asyncpg://user:secret@db.cloud-cluster.internal:5432/prod_db"
+
+def test_production_database_valid_remote_postgres_scheme_converted():
+    """Verify production settings accept remote postgres:// and normalize to postgresql+asyncpg://."""
+    s = Settings(
+        ENVIRONMENT="production",
+        DATABASE_URL="postgres://user:secret@db.cloud-cluster.internal:5432/prod_db",
+        PUBLIC_WEBHOOK_URL="https://api.example.com",
+        TELEPHONY_PROVIDER="mock",
+    )
+    assert s.async_database_url == "postgresql+asyncpg://user:secret@db.cloud-cluster.internal:5432/prod_db"
+
+def test_development_sqlite_support_preserved():
+    """Verify SQLite support is fully preserved for development and isolated testing."""
+    s_dev_default = Settings(
+        ENVIRONMENT="development",
+        DATABASE_URL=None,
+        TELEPHONY_PROVIDER="mock",
+    )
+    assert "sqlite+aiosqlite" in s_dev_default.async_database_url
+
+    s_dev_abs = Settings(
+        ENVIRONMENT="development",
+        DATABASE_URL="sqlite+aiosqlite:////tmp/test.db",
+        TELEPHONY_PROVIDER="mock",
+    )
+    assert s_dev_abs.async_database_url == "sqlite+aiosqlite:////tmp/test.db"
 
 def test_cors_origins_comma_separated_parsing():
     """Verify CORS_ORIGINS parses comma-separated strings."""

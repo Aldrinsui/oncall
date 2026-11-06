@@ -34,7 +34,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:8000",
         "https://oncall-ashy.vercel.app",
     ]
-    CORS_ORIGIN_REGEX: Optional[str] = r"^https://.*\.vercel\.app$"
+    CORS_ORIGIN_REGEX: Optional[str] = r"^https://oncall-[a-zA-Z0-9_-]+-aldrinsuis-projects\.vercel\.app$"
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod
@@ -104,22 +104,36 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT.lower() == "production":
             self.DEV_AUTH_BYPASS_ENABLED = False
 
-            # Require persistent hosted database configuration in production
+            # Require persistent hosted PostgreSQL database configuration in production
             if not self.DATABASE_URL:
                 raise ValueError(
                     "Production backend requires a persistent database configuration (DATABASE_URL is not set). "
-                    "Default local SQLite cannot be used in production. Please set DATABASE_URL (e.g. postgresql+asyncpg://user:pass@host:5432/dbname)."
+                    "Default local SQLite cannot be used in production. Please set DATABASE_URL to a remotely hosted "
+                    "persistent PostgreSQL database (e.g. postgresql+asyncpg://user:pass@host:5432/dbname)."
                 )
             db_url = self.DATABASE_URL.lower().strip()
-            if db_url.startswith("sqlite") and ("./" in db_url or "oncall.db" in db_url or "memory" in db_url):
+            if db_url.startswith("sqlite"):
                 raise ValueError(
-                    f"Production backend cannot use a relative or ephemeral SQLite database ('{self.DATABASE_URL}'). "
-                    "Production requires a persistent database configuration (e.g. managed PostgreSQL: postgresql+asyncpg://...)."
+                    f"Production backend cannot use SQLite ('{self.DATABASE_URL}'). "
+                    "Production requires a remotely hosted persistent PostgreSQL database "
+                    "(e.g. postgresql+asyncpg://user:pass@host:5432/dbname)."
                 )
-            if "localhost" in db_url or "127.0.0.1" in db_url:
+
+            is_postgres = (
+                db_url.startswith("postgresql://")
+                or db_url.startswith("postgresql+")
+                or db_url.startswith("postgres://")
+            )
+            if not is_postgres:
+                raise ValueError(
+                    f"Production backend requires a remotely hosted persistent PostgreSQL database. "
+                    f"Unsupported database scheme in '{self.DATABASE_URL}'. Please use postgresql+asyncpg://user:pass@host:5432/dbname."
+                )
+
+            if "localhost" in db_url or "127.0.0.1" in db_url or "[::1]" in db_url:
                 raise ValueError(
                     f"Production backend database cannot point to localhost ('{self.DATABASE_URL}'). "
-                    "Production requires a persistent hosted database service."
+                    "Production requires a remotely hosted persistent PostgreSQL database service."
                 )
 
             # In production, if using a real carrier provider, webhook URL must be public HTTPS
@@ -161,6 +175,8 @@ class Settings(BaseSettings):
                 return url.replace("postgresql://", "postgresql+asyncpg://", 1)
             if url.startswith("postgresql+psycopg2://"):
                 return url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+            if url.startswith("postgres://"):
+                return url.replace("postgres://", "postgresql+asyncpg://", 1)
             return url
         return "sqlite+aiosqlite:///./oncall.db"
 
