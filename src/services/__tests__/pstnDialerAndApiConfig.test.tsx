@@ -7,7 +7,9 @@ import {
   getApiBaseUrl,
   isConfiguredBackendAvailable,
   initiateOutboundCall,
+  normalizeBackendOrigin,
 } from '../telephonyApi';
+import { getPulseApiBase } from '../pulseApi';
 import vercelConfig from '../../../vercel.json';
 
 describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', () => {
@@ -201,9 +203,95 @@ describe('PSTN Dialer UI Overflow & Production API Configuration Test Suite', ()
       localStorage.removeItem('onground_backend_url');
     });
 
+    it('normalizeBackendOrigin removes trailing slashes and mistakenly included /api/v1 to prevent duplicate paths', () => {
+      expect(normalizeBackendOrigin('https://api.example.com')).toBe('https://api.example.com');
+      expect(normalizeBackendOrigin('https://api.example.com/')).toBe('https://api.example.com');
+      expect(normalizeBackendOrigin('https://api.example.com/api/v1')).toBe('https://api.example.com');
+      expect(normalizeBackendOrigin('https://api.example.com/api/v1/')).toBe('https://api.example.com');
+      expect(normalizeBackendOrigin('https://api.example.com/api')).toBe('https://api.example.com');
+      expect(normalizeBackendOrigin('')).toBe('');
+    });
+
+    it('constructs clean endpoint URL without duplicate API paths when backend URL has /api/v1 or trailing slash', async () => {
+      localStorage.setItem('onground_backend_url', 'https://fastapi.example.com/api/v1/');
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ data: { id: 'call-dup-check', status: 'AGENT_RINGING', legs: [] } }),
+      } as any);
+      globalThis.fetch = mockFetch;
+
+      try {
+        await initiateOutboundCall({
+          customerPhone: '+919876543210',
+        });
+
+        expect(mockFetch).toHaveBeenCalledWith(
+          'https://fastapi.example.com/api/v1/calls',
+          expect.anything()
+        );
+      } finally {
+        localStorage.removeItem('onground_backend_url');
+      }
+    });
+
     it('isConfiguredBackendAvailable returns true for localhost / dev environments', () => {
       // In vitest environment with window.location
       expect(isConfiguredBackendAvailable()).toBe(true);
+    });
+
+    it('rejects pointing production frontend to localhost', async () => {
+      const originalWindow = globalThis.window;
+      (globalThis as any).window = {
+        location: {
+          hostname: 'oncall-ashy.vercel.app',
+          origin: 'https://oncall-ashy.vercel.app',
+        },
+        localStorage: {
+          getItem: (k: string) => (k === 'onground_backend_url' ? 'http://localhost:8000' : null),
+        },
+      };
+
+      try {
+        expect(isConfiguredBackendAvailable()).toBe(false);
+        await expect(
+          initiateOutboundCall({
+            customerPhone: '+919876543210',
+          })
+        ).rejects.toThrow(/Production frontend cannot point to localhost/);
+      } finally {
+        globalThis.window = originalWindow;
+      }
+    });
+
+    it('verifies development localhost proxy continues to work with relative paths when no external backend is set', async () => {
+      // In local dev without configured URL, getApiBaseUrl() returns ''
+      expect(getApiBaseUrl()).toBe('');
+      expect(isConfiguredBackendAvailable()).toBe(true);
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ data: { id: 'dev-call', status: 'AGENT_RINGING', legs: [] } }),
+      } as any);
+      globalThis.fetch = mockFetch;
+
+      await initiateOutboundCall({
+        customerPhone: '+919876543210',
+      });
+
+      // Relative path /api/v1/calls is sent, matching Vite server proxy config
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/calls', expect.anything());
+    });
+
+    it('pulseApi resolves base URL correctly without hardcoding localhost in production', () => {
+      // When no external URL configured (dev proxy mode), pulseApi uses relative /api/v1
+      expect(getPulseApiBase()).toBe('/api/v1');
+
+      // When external URL configured, appends /api/v1 cleanly
+      localStorage.setItem('onground_backend_url', 'https://api.sleepcompany.com/api/v1/');
+      expect(getPulseApiBase()).toBe('https://api.sleepcompany.com/api/v1');
+      localStorage.removeItem('onground_backend_url');
     });
 
     it('detects when backend is not configured in production and gives actionable message', async () => {

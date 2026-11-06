@@ -50,46 +50,60 @@ export interface InitiateCallParams {
   agentId?: string;
 }
 
+/**
+ * Normalizes an external backend origin URL by stripping whitespace, trailing slashes,
+ * and any mistakenly appended '/api/v1' or '/api' suffixes so that endpoint paths
+ * (which start with '/api/v1') are constructed cleanly without duplication.
+ */
+export const normalizeBackendOrigin = (url: string): string => {
+  if (!url) return '';
+  return url
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/api\/v1\/?$/, '')
+    .replace(/\/api\/?$/, '');
+};
+
 export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && (window as any).__ONCALL_API_URL__) {
-    return String((window as any).__ONCALL_API_URL__).trim().replace(/\/+$/, '');
+    return normalizeBackendOrigin(String((window as any).__ONCALL_API_URL__));
   }
   const storage = typeof window !== 'undefined' ? window.localStorage : (globalThis as any).localStorage;
   if (storage) {
     const runtimeUrl = storage.getItem('onground_backend_url');
     if (runtimeUrl && runtimeUrl.trim()) {
-      return runtimeUrl.trim().replace(/\/+$/, '');
+      return normalizeBackendOrigin(runtimeUrl);
     }
   }
   if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_BACKEND_API_URL) {
-    return String(import.meta.env.VITE_BACKEND_API_URL).trim().replace(/\/+$/, '');
+    return normalizeBackendOrigin(String(import.meta.env.VITE_BACKEND_API_URL));
   }
   return '';
 };
 
 /**
  * Checks whether an external backend URL or local dev environment is available.
- * Returns false on production static hosts (like Vercel) if VITE_BACKEND_API_URL is omitted.
+ * Returns false on production static hosts (like Vercel) if VITE_BACKEND_API_URL is omitted or invalid.
  */
 export const isConfiguredBackendAvailable = (isProdOverride?: boolean): boolean => {
   const baseUrl = getApiBaseUrl();
-  if (baseUrl) return true;
 
-  if (isProdOverride !== undefined) {
-    return !isProdOverride;
-  }
+  const isProd = isProdOverride !== undefined
+    ? isProdOverride
+    : (typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD)) ||
+      (typeof window !== 'undefined' && Boolean(window.location?.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' && window.location.hostname !== '[::1]'));
 
-  // In production Vite build (PROD === true)
-  if (typeof import.meta !== 'undefined' && Boolean(import.meta.env?.PROD)) {
-    return false;
-  }
-
-  // In browser, if hostname is not localhost / loopback (e.g. deployed on Vercel domain)
-  if (typeof window !== 'undefined' && window.location?.hostname) {
-    const host = window.location.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]') {
+  if (baseUrl) {
+    // In production, pointing to localhost is invalid and rejected
+    if (isProd && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('[::1]'))) {
       return false;
     }
+    return true;
+  }
+
+  // In production Vite build or non-localhost host without configured backend URL
+  if (isProd) {
+    return false;
   }
 
   // Local development with Vite proxy to localhost:8000 or Node test environment
@@ -126,6 +140,12 @@ async function requestJson<T>(endpoint: string, options: RequestInit = {}): Prom
   const url = `${baseUrl}${endpoint}`;
 
   if (!isConfiguredBackendAvailable()) {
+    if (baseUrl && (baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1') || baseUrl.includes('[::1]'))) {
+      throw new Error(
+        `Invalid backend configuration: Production frontend cannot point to localhost (${baseUrl}). ` +
+        `Please configure VITE_BACKEND_API_URL with a publicly accessible HTTPS backend URL in Vercel settings.`
+      );
+    }
     throw new Error(
       `FastAPI backend URL not configured (VITE_BACKEND_API_URL is missing). ` +
       `The production frontend at ${typeof window !== 'undefined' ? window.location.origin : 'host'} requires an external deployed FastAPI server for PSTN carrier calling. ` +

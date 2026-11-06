@@ -1,6 +1,6 @@
 import os
-from typing import List, Optional
-from pydantic import computed_field, model_validator
+from typing import List, Optional, Any
+from pydantic import computed_field, model_validator, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -25,14 +25,30 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "onground"
 
-    # CORS Settings
+    # CORS Settings - Explicitly permits production Vercel frontend origin and preview deployments
     CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "https://oncall-ashy.vercel.app",
     ]
+    CORS_ORIGIN_REGEX: Optional[str] = r"^https://.*\.vercel\.app$"
+
+    @field_validator("CORS_ORIGINS", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            v_str = v.strip()
+            if v_str.startswith("[") and v_str.endswith("]"):
+                import json
+                try:
+                    return json.loads(v_str)
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v_str.split(",") if origin.strip()]
+        return v
 
     # Security & Development Identity
     DEV_AUTH_BYPASS_ENABLED: bool = True
@@ -87,6 +103,25 @@ class Settings(BaseSettings):
         # Disallow development auth bypass outside development/test
         if self.ENVIRONMENT.lower() == "production":
             self.DEV_AUTH_BYPASS_ENABLED = False
+
+            # Require persistent hosted database configuration in production
+            if not self.DATABASE_URL:
+                raise ValueError(
+                    "Production backend requires a persistent database configuration (DATABASE_URL is not set). "
+                    "Default local SQLite cannot be used in production. Please set DATABASE_URL (e.g. postgresql+asyncpg://user:pass@host:5432/dbname)."
+                )
+            db_url = self.DATABASE_URL.lower().strip()
+            if db_url.startswith("sqlite") and ("./" in db_url or "oncall.db" in db_url or "memory" in db_url):
+                raise ValueError(
+                    f"Production backend cannot use a relative or ephemeral SQLite database ('{self.DATABASE_URL}'). "
+                    "Production requires a persistent database configuration (e.g. managed PostgreSQL: postgresql+asyncpg://...)."
+                )
+            if "localhost" in db_url or "127.0.0.1" in db_url:
+                raise ValueError(
+                    f"Production backend database cannot point to localhost ('{self.DATABASE_URL}'). "
+                    "Production requires a persistent hosted database service."
+                )
+
             # In production, if using a real carrier provider, webhook URL must be public HTTPS
             if self.TELEPHONY_PROVIDER.lower() in ("twilio", "plivo", "exotel"):
                 url = (self.PUBLIC_WEBHOOK_URL or "").strip().lower()

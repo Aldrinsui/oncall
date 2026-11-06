@@ -7,8 +7,21 @@ import type {
   AgentChannelContext,
 } from '../types';
 import { PULSE_CHANNELS, PULSE_THREADS } from '../data/mockData';
+import { getApiBaseUrl } from './telephonyApi';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/+$/, '');
+/**
+ * Resolves the Pulse API base URL dynamically:
+ * - When VITE_BACKEND_API_URL or getApiBaseUrl() is set, appends '/api/v1' to the backend origin.
+ * - In local dev with Vite proxy, returns '/api/v1' (relative path proxied to backend).
+ * - Never points to localhost in production.
+ */
+export const getPulseApiBase = (): string => {
+  const backendOrigin = getApiBaseUrl();
+  if (backendOrigin) {
+    return `${backendOrigin}/api/v1`;
+  }
+  return '/api/v1';
+};
 
 // Default development identity headers
 const DEFAULT_HEADERS: Record<string, string> = {
@@ -28,7 +41,7 @@ export const pulseApi = {
    */
   async fetchChannels(): Promise<PulseChannel[]> {
     try {
-      const res = await fetch(`${API_BASE}/pulse/channels`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/channels`, {
         headers: DEFAULT_HEADERS,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -53,7 +66,7 @@ export const pulseApi = {
   async fetchMessages(channelId: string): Promise<ChatMessage[]> {
     try {
       // Find UUID if channelId is slug
-      const channelsRes = await fetch(`${API_BASE}/pulse/channels`, { headers: DEFAULT_HEADERS });
+      const channelsRes = await fetch(`${getPulseApiBase()}/pulse/channels`, { headers: DEFAULT_HEADERS });
       if (!channelsRes.ok) throw new Error('Failed to resolve channel UUID');
       const channelsJson = await channelsRes.json();
       const match = channelsJson.data.find(
@@ -61,7 +74,7 @@ export const pulseApi = {
       );
       const uuid = match ? match.id : channelId;
 
-      const res = await fetch(`${API_BASE}/pulse/channels/${uuid}/messages`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/channels/${uuid}/messages`, {
         headers: DEFAULT_HEADERS,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -86,7 +99,7 @@ export const pulseApi = {
    */
   async postMessage(channelId: string, body: string): Promise<ChatMessage> {
     try {
-      const channelsRes = await fetch(`${API_BASE}/pulse/channels`, { headers: DEFAULT_HEADERS });
+      const channelsRes = await fetch(`${getPulseApiBase()}/pulse/channels`, { headers: DEFAULT_HEADERS });
       let uuid = channelId;
       if (channelsRes.ok) {
         const channelsJson = await channelsRes.json();
@@ -96,7 +109,7 @@ export const pulseApi = {
         if (match) uuid = match.id;
       }
 
-      const res = await fetch(`${API_BASE}/pulse/channels/${uuid}/messages`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/channels/${uuid}/messages`, {
         method: 'POST',
         headers: DEFAULT_HEADERS,
         body: JSON.stringify({ body }),
@@ -134,7 +147,7 @@ export const pulseApi = {
    */
   async markChannelRead(channelId: string): Promise<boolean> {
     try {
-      const channelsRes = await fetch(`${API_BASE}/pulse/channels`, { headers: DEFAULT_HEADERS });
+      const channelsRes = await fetch(`${getPulseApiBase()}/pulse/channels`, { headers: DEFAULT_HEADERS });
       let uuid = channelId;
       if (channelsRes.ok) {
         const channelsJson = await channelsRes.json();
@@ -144,7 +157,7 @@ export const pulseApi = {
         if (match) uuid = match.id;
       }
 
-      const res = await fetch(`${API_BASE}/pulse/channels/${uuid}/read`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/channels/${uuid}/read`, {
         method: 'POST',
         headers: DEFAULT_HEADERS,
       });
@@ -159,7 +172,7 @@ export const pulseApi = {
    */
   async fetchPinnedItems(channelId: string): Promise<PinnedActionItem[]> {
     try {
-      const channelsRes = await fetch(`${API_BASE}/pulse/channels`, { headers: DEFAULT_HEADERS });
+      const channelsRes = await fetch(`${getPulseApiBase()}/pulse/channels`, { headers: DEFAULT_HEADERS });
       let uuid = channelId;
       if (channelsRes.ok) {
         const channelsJson = await channelsRes.json();
@@ -169,7 +182,7 @@ export const pulseApi = {
         if (match) uuid = match.id;
       }
 
-      const res = await fetch(`${API_BASE}/pulse/channels/${uuid}/pinned-items`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/channels/${uuid}/pinned-items`, {
         headers: DEFAULT_HEADERS,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -233,7 +246,7 @@ export const pulseApi = {
     customReply?: string,
   ): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/pulse/pinned-items/${pinnedItemId}/respond`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/pinned-items/${pinnedItemId}/respond`, {
         method: 'POST',
         headers: DEFAULT_HEADERS,
         body: JSON.stringify({
@@ -257,7 +270,7 @@ export const pulseApi = {
    */
   async fetchCustomAgents(): Promise<CustomAgent[]> {
     try {
-      const res = await fetch(`${API_BASE}/pulse/agents`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/agents`, {
         headers: DEFAULT_HEADERS,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -407,7 +420,7 @@ export const pulseApi = {
   async fetchChannelContext(channelSlug: string): Promise<AgentChannelContext> {
     try {
       const cleanSlug = channelSlug.replace(/^#/, '');
-      const res = await fetch(`${API_BASE}/pulse/channels/${cleanSlug}/context`, {
+      const res = await fetch(`${getPulseApiBase()}/pulse/channels/${cleanSlug}/context`, {
         headers: DEFAULT_HEADERS,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -544,7 +557,7 @@ export const pulseApi = {
     update: { status?: string; is_acknowledged?: boolean; explanation?: string },
   ): Promise<AgentChannelTask> {
     try {
-      const res = await fetch(`${API_BASE}/tasks/${taskId}`, {
+      const res = await fetch(`${getPulseApiBase()}/tasks/${taskId}`, {
         method: 'PATCH',
         headers: DEFAULT_HEADERS,
         body: JSON.stringify(update),
@@ -586,7 +599,7 @@ export const pulseApi = {
    */
   async acknowledgeTasks(channelSlug?: string): Promise<{ acknowledged_count: number }> {
     try {
-      const res = await fetch(`${API_BASE}/tasks/acknowledge`, {
+      const res = await fetch(`${getPulseApiBase()}/tasks/acknowledge`, {
         method: 'POST',
         headers: DEFAULT_HEADERS,
         body: JSON.stringify({ channel_slug: channelSlug || null }),
